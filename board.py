@@ -6,21 +6,32 @@ class Board:
         self.height = height
         self.width = width
         self.n_types = n_types
+        self.n_actions = self.height * (self.width - 1) + self.width * (self.height - 1)
         self._board = np.zeros((self.height, self.width), dtype=np.int32)
-        for row in range(self.height):
-            for column in range(self.width):
-                possible_values = set(range(1, self.n_types + 1))
+        while True:
+            invalid_board = False
+            for row in range(self.height):
+                if invalid_board:
+                    break
+                for column in range(self.width):
+                    possible_values = set(range(1, self.n_types + 1))
 
-                # Remove values that would cause a horizontal match
-                if column >= 2 and self._board[row, column - 1] == self._board[row, column - 2]:
-                    possible_values.discard(self._board[row, column - 1])
+                    # Remove values that would cause a horizontal match
+                    if column >= 2 and self._board[row, column - 1] == self._board[row, column - 2]:
+                        possible_values.discard(self._board[row, column - 1])
 
-                # Remove values that would cause a vertical match
-                if row >= 2 and self._board[row - 1, column] == self._board[row - 2, column]:
-                    possible_values.discard(self._board[row - 1, column])
+                    # Remove values that would cause a vertical match
+                    if row >= 2 and self._board[row - 1, column] == self._board[row - 2, column]:
+                        possible_values.discard(self._board[row - 1, column])
 
-                # Randomly pick a value from the remaining possible values
-                self._board[row, column] = np.random.choice(list(possible_values))
+                    # Randomly pick a value from the remaining possible values
+                    if len(possible_values) == 0:
+                        invalid_board = True
+                        break
+                    self._board[row, column] = np.random.choice(list(possible_values))
+            if not invalid_board:
+                if self.any_valid_actions():
+                    break
         self.swap_events = {'valid': False}
 
     def swap(self, source_row: int, source_column: int, target_row: int, target_column: int) -> int:
@@ -41,17 +52,16 @@ class Board:
             return 0
 
         # while any matches exists remove them and update board
-        score = 0
+        tokens_matched = 0
         chain_matches = 0
         while True:
             matches = self.get_matches()
             if len(matches) == 0:
-                return score + 5 * (chain_matches - 1)
+                return tokens_matched + tokens_matched * chain_matches
             before_removing_match = self.observation
             chain_matches += len(matches)
             for match in matches:
-                x = len(match)
-                score += 0.5 * x ** 2 + 1.5 * x + 3
+                tokens_matched += len(match)
                 for row, column in match:
                     self._board[row, column] = 0
             after_removing_match = self.observation
@@ -59,12 +69,20 @@ class Board:
                 col = self._board[:, column]
                 self._board[:, column] = np.concatenate((np.zeros(np.sum(col == 0), dtype=np.int32), col[col != 0]))
 
-            zero_mask = (self._board == 0)
-            random_values = np.random.randint(1, self.n_types + 1, size=self._board.shape)
-            falls = np.zeros(self._board.shape, dtype=np.int32)
-            falls[zero_mask] = random_values[zero_mask]
-            self.swap_events['events'].append((before_removing_match, after_removing_match, falls))
-            self._board[zero_mask] = random_values[zero_mask]
+            while True:
+                board_copy = self.observation
+                zero_mask = (self._board == 0)
+                random_values = np.random.randint(1, self.n_types + 1, size=self._board.shape)
+                falls = np.zeros(self._board.shape, dtype=np.int32)
+                falls[zero_mask] = random_values[zero_mask]
+                self.swap_events['events'].append((before_removing_match, after_removing_match, falls))
+                self._board[zero_mask] = random_values[zero_mask]
+
+                if self.any_valid_actions():
+                    break
+                else:
+                    self._board = board_copy
+                    del self.swap_events['events'][-1]
 
     def _swap(self, source_row: int, source_column: int, target_row: int, target_column: int):
         temp = self._board[target_row][target_column]
@@ -147,3 +165,41 @@ class Board:
 
     def __del__(self):
         del self._board
+
+    def is_valid_action(self, action):
+        r1, c1, r2, c2 = self.decode_action(action)
+        self._swap(r1, c1, r2, c2)
+        matches = self.get_matches()
+        self._swap(r1, c1, r2, c2)
+        return len(matches) > 0
+
+    def encode_action(self, tile1: tuple[int, int], tile2: tuple[int, int]) -> int:
+        source_row, source_column = tile1
+        target_row, target_column = tile2
+        assert (source_column == target_column and abs(source_row - target_row) == 1 or
+                source_row == target_row and abs(source_column - target_column) == 1), \
+            'source and target must be adjacent'
+
+        a = 2 * self.width - 1
+        b = self.width - 1 if source_column == target_column else 0
+        return min(source_row, target_row) * a + b + min(source_column, target_column)
+
+    def decode_action(self, action):
+        a = (2 * self.width - 1)
+        b = self.width - 1
+        if action - a * int(action / a) >= b:
+            column1 = action % a - b
+            row1 = int((action - 3 - column1) / a)
+            column2 = column1
+            row2 = row1 + 1
+        else:
+            column1 = action % a
+            row1 = int((action - column1) / a)
+            column2 = column1 + 1
+            row2 = row1
+
+        return row1, column1, row2, column2
+
+    def any_valid_actions(self) -> bool:
+        return any([self.is_valid_action(action) for action in range(self.n_actions)])
+

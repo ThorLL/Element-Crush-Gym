@@ -28,10 +28,10 @@ class Match3Env(gym.Env):
             num_types: int = 6,
             num_moves: int = 20,
             env_goal: int = 300,
-            seed: int = 0,
+            seed: int = None,
             render_mode=None,
     ):
-        assert width * height >= 6, f"Board size too small: width({width}) * height({height}) = {width * height}"
+        assert width >= 3 and height >= 3, f"Board size too small: min size: 3x3"
 
         self.width = width
         self.height = height
@@ -43,7 +43,6 @@ class Match3Env(gym.Env):
 
         np.random.seed(seed)
         self.board = None
-        self.n_actions = self.height * (self.width - 1) + self.width * (self.height - 1)
 
         assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
@@ -53,47 +52,25 @@ class Match3Env(gym.Env):
 
     def init(self) -> np.ndarray[int, np.dtype[np.int32]]:
         self.board = Board(self.width, self.height, self.num_types)
-        self.action_space = spaces.Discrete(self.n_actions)
+        self.action_space = spaces.Discrete(self.board.n_actions)
         self.observation_space = spaces.Box(low=1, high=self.num_types + 1, shape=(self.height, self.width), dtype=np.int32)
 
         return self._get_obs()
 
-    def encode_action(self, tile1: tuple[int, int], tile2: tuple[int, int]) -> int:
-        source_row, source_column = tile1
-        target_row, target_column = tile2
-        assert (source_column == target_column and abs(source_row - target_row) == 1 or
-                source_row == target_row and abs(source_column - target_column) == 1), \
-            'source and target must be adjacent'
-
-        a = 2 * self.width - 1
-        b = self.width - 1 if source_column == target_column else 0
-        return min(source_row, target_row) * a + b + min(source_column, target_column)
-
-    def decode_action(self, action):
-        a = (2 * self.width - 1)
-        b = self.width - 1
-        if action - a * int(action / a) >= b:
-            column1 = action % a - b
-            row1 = int((action - 3 - column1) / a)
-            column2 = column1
-            row2 = row1 + 1
-        else:
-            column1 = action % a
-            row1 = int((action - column1) / a)
-            column2 = column1 + 1
-            row2 = row1
-
-        return row1, column1, row2, column2
+    @property
+    def n_actions(self):
+        return self.board.n_actions
 
     def step(self, action):
-        source_row, source_column, target_row, target_column = self.decode_action(action)
-        self.score += self.board.swap(source_row, source_column, target_row, target_column)
+        source_row, source_column, target_row, target_column = self.board.decode_action(action)
+        move_score = self.board.swap(source_row, source_column, target_row, target_column)
+        self.score += move_score
         self.moves_taken += 1
 
         truncated = self.score >= self.env_goal
         done = truncated or self.num_moves == self.moves_taken
 
-        return self._get_obs(), self.score, done, truncated, {}
+        return self._get_obs(), move_score, done, truncated, {}
 
     def _get_obs(self):
         return self.board.observation
@@ -134,10 +111,12 @@ class Match3Env(gym.Env):
 
         self.draw_by_function(draw, early_draw=render_animations)
 
+
+
     def show_swap(self, action, board):
         source_row, source_column, target_row, target_column = action
         swap_time = 200 / self.metadata['animation_speed']
-        steps = swap_time / ((1 / self.metadata['render_fps']) * 1000)
+        steps = swap_time / ((1 / max(1, self.metadata['render_fps'])) * 1000)
 
         source_step = ((target_row - source_row) / steps, (target_column - source_column) / steps)
         target_step = ((source_row - target_row) / steps, (source_column - target_column) / steps)

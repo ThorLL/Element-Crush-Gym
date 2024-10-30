@@ -18,7 +18,7 @@ Fork of the [Element Crush](https://github.com/theharrychen/Element-Crush) repo 
 from Match3Env import Match3Env
 import numpy as np
 
-env = Match3Env(render_mode='human')
+env = Match3Env(render_mode='human', seed=0)
 env.metadata['animation_speed'] = 5
 observation = env.init()
 while True:
