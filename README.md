@@ -14,22 +14,20 @@
 Fork of the [Element Crush](https://github.com/theharrychen/Element-Crush) repo by [theharrychen](https://github.com/theharrychen) ported to a custom Gymnasium environment, with a lot of changes on the side (might update code with better comments and proper documentation)
 
 # Setup
-```python
-from Match3Env import Match3Env
-import numpy as np
 
-env = Match3Env(render_mode='human', seed=0)
-env.metadata['animation_speed'] = 5
-observation = env.init()
+```python
+from match3tile.env import Match3Env
+
+env = Match3Env(render_mode='human')
 while True:
-    action = np.random.choice(env.n_actions)
-    observation, reward, done, won, _ = env.step(action)
+    action = env.board.random_action()
+    obs, reward, done, won, info = env.step(action)
     if done:
         if won:
             print('Won game')
         else:
             print('Lost game')
-        observation, _ = env.reset()
+        obs, info = env.reset()
     env.render()
 ```
 
