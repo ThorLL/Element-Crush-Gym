@@ -1,7 +1,7 @@
 from jax.numpy import array
 from flax.nnx import Module, Rngs, Conv, Linear, one_hot, relu, MultiMetric, jit, value_and_grad, Optimizer, metrics
 from optax import softmax_cross_entropy_with_integer_labels, adamw
-
+import jax.numpy as jnp
 
 class Model(Module):
     def __init__(self, height, width, channels, action_space, learning_rate, momentum):
@@ -24,7 +24,7 @@ class Model(Module):
             loss=metrics.Average('loss')
         )
 
-    @jit
+
     def __call__(self, x):
         if x.shape == self.shape:
             return self.predict_on_batch(x)
@@ -32,7 +32,7 @@ class Model(Module):
             return self.predict(x)
         raise TypeError(f'Invalid shape, shape must either ({self.shape[0]}, {self.shape[1]}), ({self.shape[0]}, {self.shape[1]}, {self.shape[2]}), (n_batches, {self.shape[1]}, {self.shape[2]}), or (n_batches, {self.shape[0]}, {self.shape[1]}, {self.shape[2]})')
 
-    @jit
+
     def predict(self, x):
         x = one_hot(x, self.channels)
         x = self.conv1(x)
@@ -66,7 +66,6 @@ class Model(Module):
 
         return x  # The final output: scores for each possible move
 
-    @jit
     def predict_on_batch(self, x):
         return self.predict(x.reshape(1, *x.shape)).reshape(-1)
 
@@ -74,7 +73,6 @@ class Model(Module):
     def loss(logits, labels):
         return softmax_cross_entropy_with_integer_labels(logits=logits, labels=labels).mean()
 
-    @jit
     def loss_fn(self, batch: dict[str, list[any]]):
         x = array(batch['observations'])
         logits = self(x)
@@ -82,20 +80,17 @@ class Model(Module):
         loss = self.loss(logits, labels)
         return loss, logits
 
-    @jit
     def eval(self, batch: dict[str, list[any]]):
         loss, logits = self.loss_fn(batch)
         labels = array(batch['actions'])
         metrics.update(loss=loss, logits=logits, labels=labels)  # In-place updates
 
-    @jit
-    def _train_step(self,batch):
-        grad_fn = value_and_grad(self.loss_fn, has_aux=True)
+    def _train_step(self, batch):
+        grad_fn = value_and_grad(self.loss_fn, has_aux=True, allow_int=True)
         (loss, logits), grads = grad_fn(batch)
         self.metrics.update(loss=loss, logits=logits, labels=array(batch['actions']))
         self.optimizer.update(grads)
 
-    @jit
     def fit(self, train_ds, test_ds, epochs=1, eval_every=100):
         metrics_history = {
             'train_loss': [],
@@ -105,7 +100,7 @@ class Model(Module):
         }
 
         for epoch in range(epochs):
-            for step, batch in train_ds:
+            for step, batch in enumerate(train_ds):
                 self._train_step(batch)
 
                 if step > 0 and (step % eval_every == 0 or step == len(train_ds) - 1):

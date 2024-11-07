@@ -12,19 +12,22 @@ def create_batches(
         height: int,
         num_types: int,
         seed: int
-) -> tuple[array, array]:
+):
     global progress_counter
     env = Match3Env(width, height, num_types, seed=seed)
     obs = env.init()
-    observations = zeros((n_batches, batch_size, height, width), dtype=int32)
-    actions = zeros((n_batches, batch_size), dtype=int32)
+    batches = []
 
     for i in range(n_batches):
+        d = {
+            'observations': [],
+            'actions': []
+        }
         for j in range(batch_size):
             action = env.board.random_action()
             best_action = env.board.best_action()
-            observations[i][j] = obs
-            actions[i][j] = best_action
+            d['observations'].append(obs)
+            d['actions'].append(best_action)
             obs, reward, done, won, _ = env.step(action)
 
             with progress_counter.get_lock():
@@ -32,8 +35,9 @@ def create_batches(
 
             if done:
                 obs, _ = env.reset()
+        batches.append(d)
 
-    return observations, actions
+    return batches
 
 
 def initializer(counter: Value):
@@ -74,9 +78,13 @@ def create_data(
                 pbar.refresh()
             pbar.n = progress_counter.value
             pbar.refresh()
-    batches = [batch.get() for batch in batches]
-    batch_split = len(batches) - int(len(batches) * split)
-    return batches[:batch_split], batches[batch_split::]
+    b = []
+    for batch in batches:
+        for d in batch.get():
+            b.append(d)
+
+    batch_split = len(b) - int(len(b) * split)
+    return b[:batch_split], b[batch_split::]
 
 
 def get_train_and_test_data(
