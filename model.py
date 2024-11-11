@@ -1,7 +1,7 @@
+import tqdm
 from jax.numpy import array
-from flax.nnx import Module, Rngs, Conv, Linear, one_hot, relu, MultiMetric, jit, value_and_grad, Optimizer, metrics
+from flax.nnx import Module, Rngs, Conv, Linear, one_hot, relu, MultiMetric, jit, value_and_grad, Optimizer, metrics, grad
 from optax import softmax_cross_entropy_with_integer_labels, adamw
-import jax.numpy as jnp
 
 class Model(Module):
     def __init__(self, height, width, channels, action_space, learning_rate, momentum):
@@ -73,7 +73,7 @@ class Model(Module):
     def loss(logits, labels):
         return softmax_cross_entropy_with_integer_labels(logits=logits, labels=labels).mean()
 
-    def loss_fn(self, batch: dict[str, list[any]]):
+    def loss_fn(self, _, batch: dict[str, list[any]]):
         x = array(batch['observations'])
         logits = self(x)
         labels = array(batch['actions'])
@@ -81,13 +81,13 @@ class Model(Module):
         return loss, logits
 
     def eval(self, batch: dict[str, list[any]]):
-        loss, logits = self.loss_fn(batch)
+        loss, logits = self.loss_fn(self, batch)
         labels = array(batch['actions'])
-        metrics.update(loss=loss, logits=logits, labels=labels)  # In-place updates
+        self.metrics.update(loss=loss, logits=logits, labels=labels)  # In-place updates
 
     def _train_step(self, batch):
         grad_fn = value_and_grad(self.loss_fn, has_aux=True, allow_int=True)
-        (loss, logits), grads = grad_fn(batch)
+        (loss, logits), grads = grad_fn(self, batch)
         self.metrics.update(loss=loss, logits=logits, labels=array(batch['actions']))
         self.optimizer.update(grads)
 
@@ -109,7 +109,7 @@ class Model(Module):
                     self.metrics.reset()  # Reset the metrics for the test set.
 
                     # Compute the metrics on the test set after each training epoch.
-                    for test_batch in test_ds.as_numpy_iterator():
+                    for test_batch in test_ds:
                         self.eval(test_batch)
 
                     # Log the test metrics.
