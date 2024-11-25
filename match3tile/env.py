@@ -42,13 +42,13 @@ class Match3Env:
         return self.board.array
 
     def step(self, action: int) -> tuple[np.array, int, bool, bool, dict[str, any]]:
-        move_score, board, self.event = self.board.swap(action)
+        move_score, self.event = self.board.swap(action)
         self.score += move_score
         self.moves_taken += 1
 
         truncated = self.score >= self.env_goal
         done = truncated or self.num_moves == self.moves_taken
-        return board, move_score, done, truncated, {}
+        return self.board.array, move_score, done, truncated, {}
 
     def reset(self, seed=None) -> tuple[np.array, dict[str, any]]:
         if seed is not None:
@@ -63,11 +63,11 @@ class Match3Env:
             return
         if self.board_animator is None:
             from match3tile.draw_board import BoardAnimator
-            self.board_animator = BoardAnimator(self.metadata['animation_speed'], self.board.array.shape, self.metadata['render_fps'])
+            self.board_animator = BoardAnimator(self.metadata['animation_speed'], self.metadata['render_fps'], self.board)
 
         if self.render_mode == 'human':
             self.board_animator.draw(self.event.init_board)
-            self.board_animator.show_swap(self.event.action, self.event.init_board)
+            self.board_animator.show_swap(self.board.decode_action(self.event.action), self.event.init_board)
             for state, next_state, falls in self.event.event_boards:
                 self.board_animator.show_matches(state, next_state)
                 self.board_animator.show_falls(falls, next_state)

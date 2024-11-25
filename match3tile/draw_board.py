@@ -5,33 +5,48 @@ import pygame
 from pygame import Surface
 from os import listdir
 
-from match3tile.board import Board
+from match3tile.board import Board, NONE_TOKEN
 
 BLOCK_SIZE = 70
 PADDING = 3
 IMAGE_RADIUS = 32
 
 
-def draw_token(canvas: Surface, icon: Surface, row, col):
-    canvas.blit(icon, (col * BLOCK_SIZE + PADDING, row * BLOCK_SIZE + PADDING))
-
-
 class BoardAnimator:
-    def __init__(self, animation_speed, shape, fps):
+    def __init__(self, animation_speed, fps, board: Board):
         self.animation_speed = animation_speed
-        height, width = shape
-        self.window_size = (BLOCK_SIZE*width+2, BLOCK_SIZE*height)
+        self.window_size = (BLOCK_SIZE*board.width+2, BLOCK_SIZE*board.height)
         self.fps = fps
         pygame.init()
         pygame.display.init()
         self.window = pygame.display.set_mode(self.window_size)
         self.clock = pygame.time.Clock()
+
+        self.board = board
+
         abs_path = os.path.abspath(__file__)
         dir_path = os.path.dirname(abs_path)
-        self.images = {i+1: pygame.image.load(f"{dir_path}/images/{image}") for i, image in enumerate(listdir(f'{dir_path}/images'))}
+        image_names = [image for image in listdir(f'{dir_path}/images/default')]
+
+        images = {
+            0: [pygame.image.load(f"{dir_path}/images/default/{image}") for image in image_names],
+            board.v_line: [pygame.image.load(f"{dir_path}/images/Vline/{image}") for image in image_names],
+            board.h_line: [pygame.image.load(f"{dir_path}/images/Hline/{image}") for image in image_names],
+            board.bomb: [pygame.image.load(f"{dir_path}/images/bomb/{image}") for image in image_names],
+        }
+        big_bad = pygame.image.load(f"{dir_path}/images/bigBad.png")
+
+        self.get_token_image = (
+            lambda token:
+            big_bad if board.is_big_bad(token)
+            else images[board.get_token_type(token)][board.get_token_element(token)]
+        )
+
+    def draw_token(self, canvas: Surface, token, row, col):
+        canvas.blit(self.get_token_image(token), (col * BLOCK_SIZE + PADDING, row * BLOCK_SIZE + PADDING))
 
     def show_swap(self, action, board):
-        source_row, source_column, target_row, target_column = Board.decode_action(action, board)
+        (source_row, source_column), (target_row, target_column) = action
         swap_time = 200 / self.animation_speed
         steps = swap_time / ((1 / max(1, self.fps)) * 1000)
 
@@ -43,13 +58,11 @@ class BoardAnimator:
 
         def draw(canvas, row, col):
             if row == source_row and col == source_column:
-                draw_token(canvas, self.images[board[row, col].item()], source_row + draw_counter * source_step[0],
-                           source_column + draw_counter * source_step[1])
+                self.draw_token(canvas, board[row, col], source_row + draw_counter * source_step[0], source_column + draw_counter * source_step[1])
             elif row == target_row and col == target_column:
-                draw_token(canvas, self.images[board[row, col].item()], target_row + draw_counter * target_step[0],
-                           target_column + draw_counter * target_step[1])
+                self.draw_token(canvas, board[row, col], target_row + draw_counter * target_step[0], target_column + draw_counter * target_step[1])
             else:
-                draw_token(canvas, self.images[board[row, col].item()], row, col)
+                self.draw_token(canvas, board[row, col], row, col)
 
         while swap_time > time:
             time += self.draw(board, draw)
@@ -63,8 +76,8 @@ class BoardAnimator:
         time = 0
 
         def blinking_token_draw(canvas, row, col):
-            draw_token(canvas, self.images[board[row, col].item()], row, col)
-            if next_board[row, col] == 0 and blink:
+            self.draw_token(canvas, board[row, col], row, col)
+            if next_board[row, col] == NONE_TOKEN and blink:
                 pygame.draw.circle(
                     canvas,
                     (255, 255, 255),
@@ -73,8 +86,8 @@ class BoardAnimator:
                 )
 
         def token_draw(canvas, row, col):
-            if next_board[row, col] != 0:
-                draw_token(canvas, self.images[next_board[row, col].item()], row, col)
+            if next_board[row, col] != NONE_TOKEN:
+                self.draw_token(canvas, board[row, col], row, col)
 
         while highlight_time > time:
             if blinker > blinking_speed:
@@ -95,29 +108,39 @@ class BoardAnimator:
 
         height, width = board.shape
 
+        for col in range(width):
+            col_cnt = 0
+            for row in range(height):
+                if board[row, col] == NONE_TOKEN:
+                    col_cnt += 1
+
+            for row in range(height):
+                if row >= col_cnt:
+                    falls[row, col] = NONE_TOKEN
+
         # TODO merge logic for tokens falling on the grid and new tokens spawning in
         for column in range(width):
             for row in range(height - 1, 0, -1):
-                if board[row, column] != 0:
+                if board[row, column] != NONE_TOKEN:
                     continue
                 n_falls = 0
                 for above_row in range(row, -1, -1):
-                    if board[above_row, column] != 0:
+                    if board[above_row, column] != NONE_TOKEN:
                         break
                     n_falls += 1
 
                 for above_row in range(row, -1, -1):
                     falling_tokens[above_row, column] = (n_falls, board[above_row, column].item())
                 break
-        falling_tokens = {key: value for key, value in falling_tokens.items() if board[key] != 0}
+        falling_tokens = {key: value for key, value in falling_tokens.items() if board[key] != NONE_TOKEN}
 
         for column in range(width):
-            tiles_to_fall = sum([1 if value else 0 for value in (falls[:, column] != 0)])
+            tiles_to_fall = sum([1 if value else 0 for value in (falls[:, column] != NONE_TOKEN)])
             if tiles_to_fall == 0:
                 continue
             out_of_screen_row = 0
             for row in range(height - 1, -1, -1):
-                if falls[row, column] == 0:
+                if falls[row, column] == NONE_TOKEN:
                     continue
                 out_of_screen_row -= 1
                 falling_tokens[(out_of_screen_row, column)] = (tiles_to_fall, falls[row, column].item())
@@ -126,22 +149,20 @@ class BoardAnimator:
         settled_tokens = {}
 
         def token_draw(canvas, r, c):
-            if board[r, c] == 0 or (r, c) in falling_tokens or (r, c) in settled_tokens:
+            if board[r, c] == NONE_TOKEN or (r, c) in falling_tokens or (r, c) in settled_tokens:
                 return
             if (r, c) in falling_tokens:
-                draw_token(canvas, self.images[falling_tokens[(r, c)][1]],
-                           fall_counter + r + time / fall_time, c)
+                self.draw_token(canvas, falling_tokens[(r, c)][1], fall_counter + r + time / fall_time, c)
             elif (r, c) in settled_tokens:
-                draw_token(canvas, self.images[settled_tokens[(r, c)][1]], settled_tokens[(r, c)][0] + r,
-                           c)
+                self.draw_token(canvas, settled_tokens[(r, c)][1], settled_tokens[(r, c)][0] + r, c)
             else:
-                draw_token(canvas, self.images[board[r, c].item()], r, c)
+                self.draw_token(canvas, board[r, c], r, c)
 
         def late_draw(canvas):
             for (r, c), (f, i) in falling_tokens.items():
-                draw_token(canvas, self.images[i], fall_counter + r + time / fall_time, c)
+                self.draw_token(canvas, i, fall_counter + r + time / fall_time, c)
             for (r, c), (f, i) in settled_tokens.items():
-                draw_token(canvas, self.images[i], f + r, c)
+                self.draw_token(canvas, i, f + r, c)
 
         while len(falling_tokens) > 0:
             time = 0
@@ -170,7 +191,7 @@ class BoardAnimator:
 
         if not token_draw:
             def token_draw(can, r, c):
-                draw_token(can, self.images[board[r, c].item()], r, c)
+                self.draw_token(can, board[r, c], r, c)
 
         for row in range(height):
             for col in range(width):

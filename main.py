@@ -114,5 +114,18 @@ def train_model():
 if __name__ == '__main__':
     import os
     os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
-    mcts(20, 1000)
+    # mcts(20, 1000)
+
+    env = Match3Env(render_mode='human')
+    while True:
+        action = env.board.random_action()
+        obs, reward, done, won, info = env.step(action)
+        if done:
+            if won:
+                print('Won game')
+            else:
+                print('Lost game')
+            obs, info = env.reset()
+        env.render()
+
 
