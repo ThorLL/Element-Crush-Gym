@@ -77,7 +77,7 @@ class Node:
 
 
 class MCTS:
-    def __init__(self, env, simulations=100):
+    def __init__(self, env, simulations=100, verbal=True):
         self.root = Node(
             state=np.copy(env.board.array),
             moves=env.num_moves - env.moves_taken,
@@ -98,6 +98,8 @@ class MCTS:
             'backpropagation': 0,
         }
 
+        self.verbal = verbal
+
         del env
 
     def print_times(self):
@@ -110,16 +112,23 @@ class MCTS:
                 v = '0'+v
             print(name, v, "%.2f" % avg, sep=' - ')
 
+    def simulation_step(self):
+        node = self.tree_traversal(self.root)
+        if node.visits > 0:
+            begin = time.time()
+            node.expand()
+            node = node.children[0]
+            self.times['expand         '] += time.time() - begin
+        reward = self.rollout(node)
+        self.backpropagation(node, reward)
+
     def __call__(self):
-        for _ in tqdm(range(self.simulations)):
-            node = self.tree_traversal(self.root)
-            if node.visits > 0:
-                begin = time.time()
-                node.expand()
-                node = node.children[0]
-                self.times['expand         '] += time.time() - begin
-            reward = self.rollout(node)
-            self.backpropagation(node, reward)
+        if self.verbal:
+            for _ in tqdm(range(self.simulations)):
+                self.simulation_step()
+        else:
+            for _ in range(self.simulations):
+                self.simulation_step()
 
         next_root = self.root.best_child(0)
         next_root_idx = self.root.children.index(next_root)
@@ -148,11 +157,6 @@ class MCTS:
 
         for i in range(node.moves_left):  # Limit the depth of simulation
             node.step(random.choice(node.actions))
-
-        if node.game_score >= self.goal:
-            diff = node.game_score - self.goal
-            c = 5
-            node.game_score += diff ** c
 
         reward = node.game_score - node_score
         node.state = node_state
