@@ -7,13 +7,14 @@ Swap_Event = namedtuple('Swap_Event', ['action', 'init_board', 'event_boards'])
 
 class Board:
     def __init__(self, shape, seed=0):
-        np.random.seed(seed)
-        self.array, self.actions = self.generate_board(shape)
+        self.seed = seed
+        self.array, self.actions = self.generate_board(shape, seed)
         assert len(self.actions) > 0
         self.types = shape[-1]
 
     @staticmethod
-    def generate_board(shape):
+    def generate_board(shape, seed):
+        np.random.seed(seed)
         height, width, types = shape
         array = np.zeros((height, width), dtype=np.int32)
 
@@ -117,12 +118,13 @@ class Board:
     def fully_simulated_swap(self, action: int):
         board = np.copy(self.array)
         actions = self.actions
-        reward = self.swap(action)
+        reward, _, _ = self.swap(action)
         self.array = board
         self.actions = actions
         return reward
 
     def swap(self, action: int) -> tuple[int, np.array, Swap_Event]:
+        np.random.seed(self.seed)
         assert action in self.actions
         initial_obs = self.array
         array = Board.swap_tokens(action, self.array)
@@ -164,20 +166,28 @@ class Board:
         return tokens_matched + tokens_matched * (chain_matches - 1), array, Swap_Event(action, initial_obs, events)
 
     def random_action(self) -> int:
+        np.random.seed(self.seed)
         return np.random.choice(self.actions)
 
-    def best_action(self) -> int:
-        best_actions = []
+    def naive_actions(self):
+        actions = []
         highest_reward = 0
         for action in self.actions:
             reward = self.simulate_swap(action)
             if reward > highest_reward:
-                best_actions = [action]
+                actions = [action]
                 highest_reward = reward
             elif reward == highest_reward:
-                best_actions.append(action)
+                actions.append(action)
+        return actions
+
+    def naive_action(self):
+        return self.naive_actions()[0]
+
+    def best_action(self) -> int:
+        best_actions = self.naive_actions()
         if len(best_actions) > 1:
-            best_actions = [max(best_actions, key=lambda a: self.fully_simulated_swap(action)[0])]
+            best_actions = [max(best_actions, key=lambda a: self.fully_simulated_swap(a))]
         return best_actions[0]
 
     @staticmethod

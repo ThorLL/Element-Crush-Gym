@@ -63,7 +63,7 @@ class Match3Env:
             return
         if self.board_animator is None:
             from match3tile.draw_board import BoardAnimator
-            self.board_animator = BoardAnimator(self.metadata['animation_speed'], self.event.init_board.shape, self.metadata['render_fps'])
+            self.board_animator = BoardAnimator(self.metadata['animation_speed'], self.board.array.shape, self.metadata['render_fps'])
 
         if self.render_mode == 'human':
             self.board_animator.draw(self.event.init_board)
@@ -71,3 +71,4 @@ class Match3Env:
             for state, next_state, falls in self.event.event_boards:
                 self.board_animator.show_matches(state, next_state)
                 self.board_animator.show_falls(falls, next_state)
+            self.board_animator.draw(self.board.array)
