@@ -79,7 +79,6 @@ class BoardAnimator:
                 )
         self.draw(board, early_draw=draw_action)
 
-
     def show_matches(self, board: np.array, next_board: np.array):
         highlight_time = 1000 / self.animation_speed
         blinking_speed = 300 / self.animation_speed

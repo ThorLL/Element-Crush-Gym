@@ -51,42 +51,10 @@ def get_center(match):
 
 
 class Board:
-    def __init__(self, shape, seed=0):
+    def __init__(self, shape, seed=0, init_board=None):
         self.seed = seed
         self.height, self.width, self.types = shape
         assert self.types > 1
-        self.array = np.full((self.height, self.width), NONE_TOKEN, dtype=np.int32)
-        self.fill_board()
-
-        """
-        example of 6 tokens:
-        x    x x   x x x
-        
-        0    x x   0 0 0 = 0 = wind
-        0    x x   0 0 1 = 1 = dark
-        0    x x   0 1 0 = 2 = earth
-        0    x x   0 1 1 = 3 = fire
-        0    x x   1 0 0 = 4 = sun
-        0    x x   1 0 1 = 5 = water
-        
-        element mask:
-        0    0 0   1 1 1 = 7
-        
-        types:
-        x    0 0   x x x = +0   default
-        x    0 1   x x x = +8   v_line
-        x    1 0   x x x = +16  h_line
-        x    1 1   x x x = +24  bomb
-        
-        type mask:
-        
-        x    1 1   0 0 0 = 24
-        
-        
-        big bad = 
-        
-        1   0 0    0 0 0 = 32
-        """
 
         required_bits = int(math.ceil(math.log2(self.types)))
         self.element_mask = (2 ** required_bits) - 1
@@ -98,15 +66,53 @@ class Board:
 
         self.token_type_mask = self.bomb
 
-        np.random.seed(seed)
-        matches = self.get_matches()
-        while len(matches) > 0:
-            for match in matches:
-                for cell in match:
-                    self.array[cell] = np.random.choice(range(self.types))
-            matches = self.get_matches()
+        if init_board is None:
+            self.array = np.full((self.height, self.width), NONE_TOKEN, dtype=np.int32)
+            self.fill_board()
 
+            """
+            example of 6 tokens:
+            x    x x   x x x
+            
+            0    x x   0 0 0 = 0 = wind
+            0    x x   0 0 1 = 1 = dark
+            0    x x   0 1 0 = 2 = earth
+            0    x x   0 1 1 = 3 = fire
+            0    x x   1 0 0 = 4 = sun
+            0    x x   1 0 1 = 5 = water
+            
+            element mask:
+            0    0 0   1 1 1 = 7
+            
+            types:
+            x    0 0   x x x = +0   default
+            x    0 1   x x x = +8   v_line
+            x    1 0   x x x = +16  h_line
+            x    1 1   x x x = +24  bomb
+            
+            type mask:
+            
+            x    1 1   0 0 0 = 24
+            
+            
+            big bad = 
+            
+            1   0 0    0 0 0 = 32
+            """
+
+            np.random.seed(seed)
+            matches = self.get_matches()
+            while len(matches) > 0:
+                for match in matches:
+                    for cell in match:
+                        self.array[cell] = np.random.choice(range(self.types))
+                matches = self.get_matches()
+        else:
+            self.array = init_board
         self.actions = self.valid_actions()
+
+    def clone(self):
+        return Board((self.height, self.width, self.types), self.seed, np.copy(self.array))
 
     def get_token_element(self, token):
         return self.element_mask & token if not self.is_big_bad(token) else NONE_TOKEN
@@ -120,11 +126,18 @@ class Board:
     def fill_board(self):
         self.seed += 1
         np.random.seed(self.seed)
+        changed = []
         for row in range(self.height):
             for col in range(self.width):
                 if self.array[row, col] != NONE_TOKEN:
                     continue
                 self.array[row, col] = np.random.choice(range(self.types))
+                changed.append((row, col))
+
+        if len(self.valid_actions()) == 0:
+            for (row, col) in changed:
+                self.array[row, col] = NONE_TOKEN
+            self.fill_board()
 
     def remove_matches(self, matches: list[list[tuple[int, int]]]) -> np.array:
         for match in matches:
@@ -179,7 +192,6 @@ class Board:
             matches = [[(row, col)] for row in range(self.height) for col in range(self.width)]
             self.array = np.full(self.array.shape, NONE_TOKEN, dtype=np.int32)
         elif self.is_big_bad(self.array[source]) or self.is_big_bad(self.array[target]):
-
             big_bad = target if self.is_big_bad(self.array[target]) else source
             other = source if self.is_big_bad(self.array[target]) else target
             element = self.get_token_element(self.array[other])
@@ -193,9 +205,10 @@ class Board:
                             if element_type == self.bomb:
                                 self.array[row, col] = self.array[other]
                             else:
-                                if self.get_token_type(self.array[row, col]) != 0:
+                                if self.get_token_type(self.array[row, col]) == 0:
                                     self.array[row, col] = element + (self.v_line if count % 2 == 0 else self.h_line)
                                     count += 1
+
                             handle_type((row, col))
             else:  # normal token
                 for row in range(self.height):
@@ -392,22 +405,33 @@ class Board:
         np.random.seed(self.seed)
         return np.random.choice(self.actions)
 
-    def fully_simulated_swap(self, action: int):
+    def simulate_swap(self, action: int, naive):
         board = np.copy(self.array)
         actions = self.actions
-        reward, _ = self.swap(action, naive=True)
+        reward, _ = self.swap(action, naive)
         self.array = board
         self.actions = actions
         return reward
+
+    def naive_action(self):
+        best_action = None
+        best_reward = -1
+        for action in self.actions:
+            reward = self.simulate_swap(action, True)
+            if reward > best_reward:
+                best_reward = reward
+                best_action = action
+        print(best_reward)
+        return best_action
 
     def best_action(self) -> int:
         best_action = None
         best_reward = -1
         for action in self.actions:
-            reward = self.fully_simulated_swap(action)
+            reward = self.simulate_swap(action, False)
             if reward > best_reward:
                 best_reward = reward
                 best_action = action
-
+        print(best_reward)
         return best_action
 

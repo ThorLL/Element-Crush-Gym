@@ -9,8 +9,8 @@ import numpy as np
 
 
 class Node:
-    def __init__(self, state, moves, game_score, parent=None, config=(0, 6)):
-        self.state = np.copy(state)
+    def __init__(self, state: Board, moves, game_score, parent=None, config=(0, 6)):
+        self.state: Board = state.clone()
         self.parent: Node = parent
         self.children = []
         self.visits = 0
@@ -18,7 +18,7 @@ class Node:
         self.moves_left = moves
         self.game_score = game_score
         self.seed, self.types = config
-        self.actions = []
+        self.actions = self.state.actions
 
     def best_child(self, c):
         return max(self.children, key=lambda child: child.ucb1(c))
@@ -28,34 +28,10 @@ class Node:
             np.random.seed(self.seed)
         else:
             np.random.seed(random.randint(0, 2**32 - 1))
-        self.state = Board.swap_tokens(action, self.state)
 
-        tokens_matched = 0
-        chain_matches = 0
-
-        actions = []
-        while True:
-            matches = Board.get_matches(self.state)
-            if len(matches) == 0 and len(actions) == 0:
-                pass
-            if len(matches) == 0:
-                break
-            chain_matches += len(matches)
-            tokens_matched += sum([len(match) for match in matches])
-            self.state = Board.remove_matches(matches, self.state)
-            self.state = Board.drop(self.state)
-
-            while True:
-                safe_cpy = np.copy(self.state)
-                zero_mask = (self.state == 0)
-                random_values = np.random.randint(1, self.types + 1, size=self.state.shape, dtype=np.int32)
-                self.state[zero_mask] = random_values[zero_mask]
-                self.actions = Board.valid_actions(self.state)
-                if len(self.actions) > 0:
-                    break
-                else:
-                    self.state = safe_cpy
-        self.game_score += tokens_matched + tokens_matched * (chain_matches - 1)
+        score, _ = self.state.swap(action)
+        self.actions = self.state.actions
+        self.game_score += score
 
     def ucb1(self, c) -> float:
         if self.visits == 0:
@@ -79,12 +55,11 @@ class Node:
 class MCTS:
     def __init__(self, env, simulations=100):
         self.root = Node(
-            state=np.copy(env.board.array),
+            state=env.board,
             moves=env.num_moves - env.moves_taken,
             game_score=env.score,
             config=(env.seed, env.num_types)
         )
-        self.root.actions = env.board.actions
 
         self.simulations = simulations
 
@@ -142,12 +117,12 @@ class MCTS:
     def rollout(self, node):
         begin = time.time()
 
-        node_state = np.copy(node.state)
+        node_state = node.state.clone()
         node_actions = node.actions
         node_score = node.game_score
 
         for i in range(node.moves_left):  # Limit the depth of simulation
-            node.step(random.choice(node.actions))
+            node.step(random.choice(node.state.actions))
 
         if node.game_score >= self.goal:
             diff = node.game_score - self.goal
