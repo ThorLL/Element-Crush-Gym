@@ -1,3 +1,5 @@
+import time
+
 import numpy as np
 
 from match3tile.board import Board
@@ -8,11 +10,11 @@ class Match3Env:
 
     def __init__(
             self,
-            width: int = 7,
+            width: int = 9,
             height: int = 9,
             num_types: int = 6,
             num_moves: int = 20,
-            env_goal: int = 300,
+            env_goal: int = 500,
             seed: int = 0,
             render_mode: str = None
     ):
@@ -42,6 +44,7 @@ class Match3Env:
         return self.board.array
 
     def step(self, action: int) -> tuple[np.array, int, bool, bool, dict[str, any]]:
+        self.actions = self.board.valid_actions()
         move_score, self.event = self.board.swap(action)
         self.score += move_score
         self.moves_taken += 1
@@ -56,6 +59,7 @@ class Match3Env:
         else:
             self.seed += 1
         self.score, self.moves_taken = 0, 0
+        self.board = Board(self.observation_space, self.seed)
         return self.board.array, {}
 
     def render(self):
@@ -67,6 +71,8 @@ class Match3Env:
 
         if self.render_mode == 'human':
             self.board_animator.draw(self.event.init_board)
+            self.board_animator.draw_actions(self.event.init_board, self.actions)
+            # time.sleep(1)
             self.board_animator.show_swap(self.board.decode_action(self.event.action), self.event.init_board)
             for state, next_state, falls in self.event.event_boards:
                 self.board_animator.show_matches(state, next_state)

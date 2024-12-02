@@ -22,8 +22,6 @@ class BoardAnimator:
         self.window = pygame.display.set_mode(self.window_size)
         self.clock = pygame.time.Clock()
 
-        self.board = board
-
         abs_path = os.path.abspath(__file__)
         dir_path = os.path.dirname(abs_path)
         image_names = [image for image in listdir(f'{dir_path}/images/default')]
@@ -38,7 +36,7 @@ class BoardAnimator:
 
         self.get_token_image = (
             lambda token:
-            big_bad if board.is_big_bad(token)
+            big_bad if board.is_big_bad(token) or token == NONE_TOKEN
             else images[board.get_token_type(token)][board.get_token_element(token)]
         )
 
@@ -67,6 +65,20 @@ class BoardAnimator:
         while swap_time > time:
             time += self.draw(board, draw)
             draw_counter += 1
+
+    def draw_actions(self, board: np.array, actions: list[int]):
+        def draw_action(canvas):
+            for action in actions:
+                source, target = Board.decode(action, board)
+                pygame.draw.line(
+                    canvas,
+                    (0, 255, 0),
+                    ((source[1] + 0.5) * BLOCK_SIZE, (source[0] + 0.5) * BLOCK_SIZE),
+                    ((target[1] + 0.5) * BLOCK_SIZE, (target[0] + 0.5) * BLOCK_SIZE),
+                    5
+                )
+        self.draw(board, early_draw=draw_action)
+
 
     def show_matches(self, board: np.array, next_board: np.array):
         highlight_time = 1000 / self.animation_speed
