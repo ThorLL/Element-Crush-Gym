@@ -327,12 +327,16 @@ class Board:
         return is_valid
 
     def encode_action(self, tile1: tuple[int, int], tile2: tuple[int, int]) -> int:
+        return self.encode(tile1, tile2, self.array)
+
+    @staticmethod
+    def encode(tile1: tuple[int, int], tile2: tuple[int, int], board):
         source_row, source_column = tile1
         target_row, target_column = tile2
         assert (source_column == target_column and abs(source_row - target_row) == 1 or
                 source_row == target_row and abs(source_column - target_column) == 1), \
             'source and target must be adjacent'
-        width = self.array.shape[1]
+        width = board.shape[1]
         a = 2 * width - 1
         b = width - 1 if source_column == target_column else 0
         return min(source_row, target_row) * a + b + min(source_column, target_column)
