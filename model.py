@@ -1,7 +1,7 @@
-import tqdm
 from jax.numpy import array
-from flax.nnx import Module, Rngs, Conv, Linear, one_hot, relu, MultiMetric, jit, value_and_grad, Optimizer, metrics, grad
+from flax.nnx import Module, Rngs, Conv, Linear, one_hot, relu, MultiMetric, value_and_grad, Optimizer, metrics
 from optax import softmax_cross_entropy_with_integer_labels, adamw
+
 
 class Model(Module):
     def __init__(self, height, width, channels, action_space, learning_rate, momentum):
@@ -24,14 +24,18 @@ class Model(Module):
             loss=metrics.Average('loss')
         )
 
-
     def __call__(self, x):
         if x.shape == self.shape:
             return self.predict_on_batch(x)
         if len(x.shape) == 3 and x.shape[1] == self.shape[0] and x.shape[2] == self.shape[1]:
             return self.predict(x)
-        raise TypeError(f'Invalid shape, shape must either ({self.shape[0]}, {self.shape[1]}), ({self.shape[0]}, {self.shape[1]}, {self.shape[2]}), (n_batches, {self.shape[1]}, {self.shape[2]}), or (n_batches, {self.shape[0]}, {self.shape[1]}, {self.shape[2]})')
-
+        raise TypeError(
+            f'Invalid shape, shape must either '
+            f'({self.shape[0]}, {self.shape[1]}), ({self.shape[0]}, {self.shape[1]}, {self.shape[2]}), '
+            f'(n_batches, {self.shape[1]}, {self.shape[2]}), '
+            f'or '
+            f'(n_batches, {self.shape[0]}, {self.shape[1]}, {self.shape[2]})'
+        )
 
     def predict(self, x):
         x = one_hot(x, self.channels)
@@ -127,4 +131,3 @@ class Model(Module):
                         f"loss: {metrics_history['test_loss'][-1]}, "
                         f"accuracy: {metrics_history['test_accuracy'][-1] * 100}"
                     )
-
