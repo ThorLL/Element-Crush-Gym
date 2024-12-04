@@ -1,4 +1,4 @@
-import time
+from random import randint
 
 import numpy as np
 
@@ -15,11 +15,15 @@ class Match3Env:
             num_types: int = 6,
             num_moves: int = 20,
             env_goal: int = 500,
-            seed: int = 0,
+            seed: int = None,
             render_mode: str = None
     ):
 
-        np.random.seed(seed)
+        if seed is not None:
+            self.seed = seed
+        else:
+            self.seed = randint(0, 2**32 - 1)
+
         assert width >= 3 and height >= 3, f"Board size too small: min size: 3x3"
 
         self.width = width
@@ -28,12 +32,11 @@ class Match3Env:
         self.env_goal = env_goal
         self.num_moves = num_moves
         self.score, self.moves_taken = 0, 0
-        self.seed = seed
 
         self.observation_space = (height, width, num_types)
         self.action_space = height * (width - 1) + width * (height - 1)
 
-        self.board = Board(self.observation_space, seed)
+        self.board = Board(self.observation_space, self.seed)
 
         assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
@@ -57,7 +60,7 @@ class Match3Env:
         if seed is not None:
             self.seed = seed
         else:
-            self.seed += 1
+            self.seed = (1 + self.seed) % 2**32 - 1
         self.score, self.moves_taken = 0, 0
         self.board = Board(self.observation_space, self.seed)
         return self.board.array, {}

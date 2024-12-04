@@ -1,5 +1,6 @@
 import math
 from collections import namedtuple
+from random import choice
 
 import numpy as np
 
@@ -94,7 +95,7 @@ class Board:
         return self.big_bad & token != 0
 
     def fill_board(self):
-        self.seed += 1
+        self.seed = (1 + self.seed) % (2**32 - 1)
         np.random.seed(self.seed)
         changed = []
         for row in range(self.height):
@@ -127,7 +128,7 @@ class Board:
             self.array[:, column] = drop_column(column)
 
     def swap(self, action: int, naive=False) -> tuple[int, Swap_Event]:
-        self.seed += 1
+        self.seed = (1 + self.seed) % (2**32 - 1)
         np.random.seed(self.seed)
         assert action in self.actions
         initial_obs = np.copy(self.array)
@@ -371,16 +372,16 @@ class Board:
             return [argmax_batch(p) for p in pred]
 
     def random_action(self) -> int:
-        self.seed += 1
-        np.random.seed(self.seed)
-        return np.random.choice(self.actions)
+        return choice(self.actions)
 
     def simulate_swap(self, action: int, naive):
         board = np.copy(self.array)
         actions = self.actions
+        seed = self.seed
         reward, _ = self.swap(action, naive)
         self.array = board
         self.actions = actions
+        self.seed = seed
         return reward
 
     def naive_action(self):
