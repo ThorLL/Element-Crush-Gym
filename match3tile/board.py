@@ -70,36 +70,6 @@ class Board:
             self.array = np.full((self.height, self.width), NONE_TOKEN, dtype=np.int32)
             self.fill_board()
 
-            """
-            example of 6 tokens:
-            x    x x   x x x
-            
-            0    x x   0 0 0 = 0 = wind
-            0    x x   0 0 1 = 1 = dark
-            0    x x   0 1 0 = 2 = earth
-            0    x x   0 1 1 = 3 = fire
-            0    x x   1 0 0 = 4 = sun
-            0    x x   1 0 1 = 5 = water
-            
-            element mask:
-            0    0 0   1 1 1 = 7
-            
-            types:
-            x    0 0   x x x = +0   default
-            x    0 1   x x x = +8   v_line
-            x    1 0   x x x = +16  h_line
-            x    1 1   x x x = +24  bomb
-            
-            type mask:
-            
-            x    1 1   0 0 0 = 24
-            
-            
-            big bad = 
-            
-            1   0 0    0 0 0 = 32
-            """
-
             np.random.seed(seed)
             matches = self.get_matches()
             while len(matches) > 0:
@@ -421,7 +391,6 @@ class Board:
             if reward > best_reward:
                 best_reward = reward
                 best_action = action
-        print(best_reward)
         return best_action
 
     def best_action(self) -> int:
@@ -432,6 +401,4 @@ class Board:
             if reward > best_reward:
                 best_reward = reward
                 best_action = action
-        print(best_reward)
         return best_action
-
