@@ -77,6 +77,6 @@ if __name__ == '__main__':
     train_model()
 
     random_action_scores = async_pbar_auto_batcher(random_task, samples_size)
-    best_score = async_pbar_auto_batcher(naive_task, samples_size)
-    naive_score = async_pbar_auto_batcher(best_task, samples_size)
+    naive_score = async_pbar_auto_batcher(naive_task, samples_size)
+    best_score = async_pbar_auto_batcher(best_task, samples_size)
     mcts_score = async_pbar_auto_batcher(mcts_task, samples_size)
