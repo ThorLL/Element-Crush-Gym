@@ -3,6 +3,7 @@ from match3tile.env import Match3Env
 from model import Model
 from util.dataset import get_train_and_test_data
 from util.mp import async_pbar_auto_batcher
+from util.plotter import plot_distribution
 
 
 def random_task():
@@ -80,3 +81,10 @@ if __name__ == '__main__':
     naive_score = async_pbar_auto_batcher(naive_task, samples_size)
     best_score = async_pbar_auto_batcher(best_task, samples_size)
     mcts_score = async_pbar_auto_batcher(mcts_task, samples_size)
+
+    plot_distribution({
+        'Random actions': random_action_scores,
+        'Naive actions': naive_score,
+        'Best actions': best_score,
+        'MCTS actions': mcts_score,
+    })
