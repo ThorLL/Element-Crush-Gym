@@ -4,6 +4,7 @@ from model import Model
 from util.dataset import get_train_and_test_data
 from util.mp import async_pbar_auto_batcher
 from util.plotter import plot_distribution
+from pickle import load, dump
 
 
 def random_task():
@@ -74,13 +75,20 @@ if __name__ == '__main__':
     import os
     os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
 
-    samples_size = 1000
-    train_model()
+    samples_size = 100
+    # train_model()
 
-    random_action_scores = async_pbar_auto_batcher(random_task, samples_size)
-    naive_score = async_pbar_auto_batcher(naive_task, samples_size)
-    best_score = async_pbar_auto_batcher(best_task, samples_size)
-    mcts_score = async_pbar_auto_batcher(mcts_task, samples_size)
+    samples_storage = 'samples.pkl'
+    try:
+        with open(samples_storage, 'rb') as handle:
+            random_action_scores, naive_score, best_score, mcts_score = load(handle)
+    except:
+        random_action_scores = async_pbar_auto_batcher(random_task, samples_size)
+        naive_score = async_pbar_auto_batcher(naive_task, samples_size)
+        best_score = async_pbar_auto_batcher(best_task, samples_size)
+        mcts_score = async_pbar_auto_batcher(mcts_task, samples_size)
+        with open(samples_storage, 'wb') as handle:
+            dump((random_action_scores, naive_score, best_score, mcts_score), handle)
 
     plot_distribution(
         {

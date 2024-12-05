@@ -52,18 +52,10 @@ def plot_distribution(data: dict[str, list[int]]):
     for length in min_widths.values():
         row_seperator += '-' * length + '|'
 
-    for analysis in analyses[1:]:
-        mean = analysis['mean']
-        std_dev = analysis['standard_deviation']
+    print()
+    print(row_seperator)
 
-        # Create a range of values for the normal distribution
-        x = np.linspace(0, bin_end, 500)
-        pdf = (1 / (std_dev * math.sqrt(2 * math.pi))) * np.exp(-0.5 * ((x - mean) / std_dev) ** 2)
-        pdf /= max(pdf)
-        pdf *= mean
-        # Plot the Gaussian curve
-        plt.plot(x, pdf, label=analysis['name'], linewidth=2)
-
+    for analysis in analyses:
         row = '|'
         for column, value in analysis.items():
             column_width = min_widths[column]
@@ -73,6 +65,18 @@ def plot_distribution(data: dict[str, list[int]]):
             row += ' ' * left + str(value) + ' ' * right + '|'
         print(row)
         print(row_seperator)
+
+    for analysis in analyses[1:]:
+        mean = analysis['mean']
+        std_dev = analysis['standard_deviation']
+
+        # Create a range of values for the normal distribution
+        x = np.linspace(0, bin_end, 500)
+        pdf = (1 / (std_dev * math.sqrt(2 * math.pi))) * np.exp(-0.5 * ((x - mean) / std_dev) ** 2)
+        # Plot the Gaussian curve
+        plt.plot(x, pdf, label=analysis['name'], linewidth=2)
+
+
 
     # Add legend and labels
     plt.legend()
