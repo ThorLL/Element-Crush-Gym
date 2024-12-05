@@ -88,6 +88,10 @@ class MCTS:
             print(name, v, "%.2f" % avg, sep=' - ')
 
     def __call__(self):
+        action, _, _ = self.analyse()
+        return action
+
+    def analyse(self):
         if self.verbal:
             for _ in tqdm(range(self.simulations)):
                 self.simulation_step()
@@ -96,6 +100,10 @@ class MCTS:
                 self.simulation_step()
 
         next_root = self.root.best_child(0)
+
+        policy = [child.ucb1(0) for child in self.root.children]
+        value = next_root.ucb1(0)
+
         next_root_idx = self.root.children.index(next_root)
         action = self.root.actions[next_root_idx]
         next_root.parent = None
@@ -104,7 +112,7 @@ class MCTS:
         del self.root
         self.root = next_root
 
-        return action
+        return action, value, policy
 
     def simulation_step(self):
         node = self.tree_traversal(self.root)
@@ -132,11 +140,6 @@ class MCTS:
 
         for i in range(node.moves_left):  # Limit the depth of simulation
             node.step(random.choice(node.state.actions))
-
-        if node.game_score >= self.goal:
-            diff = node.game_score - self.goal
-            c = 5
-            node.game_score += diff ** c
 
         reward = node.game_score - node_score
         node.state = node_state
