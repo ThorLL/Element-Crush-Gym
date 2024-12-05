@@ -75,9 +75,9 @@ if __name__ == '__main__':
     import os
     os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
 
-    samples_size = 100
-    # train_model()
+    train_model()
 
+    samples_size = 100
     samples_storage = 'samples.pkl'
     try:
         with open(samples_storage, 'rb') as handle:
