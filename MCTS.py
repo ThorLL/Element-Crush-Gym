@@ -1,11 +1,12 @@
 import math
 import random
-import time
 
 from tqdm import tqdm
 
 from match3tile.board import Board
 import numpy as np
+
+from util.profiler import try_profile
 
 
 class Node:
@@ -66,26 +67,7 @@ class MCTS:
         self.goal = env.env_goal
         self.root.expand()
 
-        self.times = {
-            'tree traversal ': 0,
-            'expand         ': 0,
-            'rollout        ': 0,
-            'backpropagation': 0,
-        }
-
         self.verbal = verbal
-
-        del env
-
-    def print_times(self):
-        print('MCTS TIME TABLE')
-        print('      Step      - Total - Avg pr call')
-        for name, v in self.times.items():
-            avg = self.times[name] / self.simulations
-            v = "%.2f" % v
-            if len(v) == 4:
-                v = '0'+v
-            print(name, v, "%.2f" % avg, sep=' - ')
 
     def __call__(self):
         action, _, _ = self.analyse()
@@ -115,25 +97,19 @@ class MCTS:
         return action, value, policy
 
     def simulation_step(self):
-        node = self.tree_traversal(self.root)
+        node = try_profile(self.tree_traversal, self.root)
         if node.visits > 0:
-            begin = time.time()
-            node.expand()
+            try_profile(node.expand, )
             node = node.children[0]
-            self.times['expand         '] += time.time() - begin
-        reward = self.rollout(node)
-        self.backpropagation(node, reward)
+        reward = try_profile(self.rollout, node)
+        try_profile(self.backpropagation, node, reward)
 
     def tree_traversal(self, node: Node):
-        begin = time.time()
         while len(node.children) != 0:
             node = node.best_child(3)
-        self.times['tree traversal '] += time.time() - begin
         return node
 
     def rollout(self, node):
-        begin = time.time()
-
         node_state = node.state.clone()
         node_actions = node.actions
         node_score = node.game_score
@@ -145,13 +121,10 @@ class MCTS:
         node.state = node_state
         node.actions = node_actions
         node.game_score = node_score
-        self.times['rollout        '] += time.time() - begin
         return reward
 
     def backpropagation(self, node, reward):
-        begin = time.time()
         while node:
             node.visits += 1
             node.reward += reward
             node = node.parent
-        self.times['backpropagation'] += time.time() - begin
