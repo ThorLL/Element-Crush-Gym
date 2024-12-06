@@ -1,22 +1,14 @@
 import math
+import random
 
 import numpy as np
 from matplotlib import pyplot as plt
 
+from util.table import build_table
 
-def plot_distribution(data: dict[str, list[int]]):
-    analyses = [
-        {
-            'name': 'Dataset',
-            'mean': 'Mean',
-            'min': 'Min(Q0)',
-            'q1': 'Q1',
-            'median': 'Median(Q2)',
-            'q3': 'Q3',
-            'max': 'Max(Q5)',
-            'standard_deviation': 'Standard Deviation'
-        }
-    ]
+
+def plot_distribution(data):
+    analyses = []
 
     bin_end = 0
     for name, values in data.items():
@@ -40,33 +32,14 @@ def plot_distribution(data: dict[str, list[int]]):
         bin_end = max(bin_end, q5)
 
     # Plot each distribution
+
+    print(build_table(
+        ['Dataset', 'Mean', 'Min(Q0)', 'Q1', 'Median(Q2)', 'Q3', 'Max(Q5)', 'Standard Deviation'],
+        [analysis.values() for analysis in analyses]
+    ))
+
     plt.figure(figsize=(10, 6))
-
-    min_widths = {}
-
     for analysis in analyses:
-        for column, value in analysis.items():
-            min_widths[column] = max(min_widths[column], len(str(value))) if column in min_widths else max(len(str(value)), 8)
-    min_widths = {key: val+2 if val % 2 == 0 else val+3 for key, val in min_widths.items()}
-    row_seperator = '|'
-    for length in min_widths.values():
-        row_seperator += '-' * length + '|'
-
-    print()
-    print(row_seperator)
-
-    for analysis in analyses:
-        row = '|'
-        for column, value in analysis.items():
-            column_width = min_widths[column]
-            missing_spaces = column_width - len(str(value))
-            left = int(missing_spaces/2)
-            right = missing_spaces - left
-            row += ' ' * left + str(value) + ' ' * right + '|'
-        print(row)
-        print(row_seperator)
-
-    for analysis in analyses[1:]:
         mean = analysis['mean']
         std_dev = analysis['standard_deviation']
 
@@ -76,8 +49,6 @@ def plot_distribution(data: dict[str, list[int]]):
         # Plot the Gaussian curve
         plt.plot(x, pdf, label=analysis['name'], linewidth=2)
 
-
-
     # Add legend and labels
     plt.legend()
     plt.xlabel('Value')
@@ -85,3 +56,12 @@ def plot_distribution(data: dict[str, list[int]]):
     plt.title('Normal Distributions of Data')
     plt.grid()
     plt.show()
+
+
+if __name__ == '__main__':
+    plot_distribution({
+        'Random actions': random.sample(range(1, 50), 7),
+        'Naive actions': random.sample(range(1, 50), 7),
+        'Best actions': random.sample(range(1, 50), 7),
+        'MCTS actions': random.sample(range(1, 50), 7),
+    })
