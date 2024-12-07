@@ -14,11 +14,17 @@ def task(data):
     obs = env.init()
     data = {
         'observations': [],
-        'actions': []
+        'policies': [],
+        'values': []
     }
     for _ in range(batch_size):
         data['observations'].append(obs)
-        data['actions'].append(MCTS(env, verbal=False)())
+        _, value, policy = MCTS(env, verbal=False).analyse()
+        policies = np.zeros((env.action_space,))
+        for a, p in zip(env.board.actions, policy):
+            policies[a] = p
+        data['policies'].append(policies)
+        data['values'].append(value)
         obs, reward, done, won, _ = env.step(env.board.random_action())
         callback()
         if done:
@@ -44,30 +50,38 @@ def get_train_and_test_data(
         test_data = []
 
         # mirror actions and observations:
-        def create_mirror(a, o):
-            (r1, c1), (r2, c2) = Board.decode(a, o)
-            width = obs.shape[1] - 1
-            c1 = width - c1
-            c2 = width - c2
-            return Board.encode((r1, c1), (r2, c2), o), np.fliplr(obs)
+        def create_mirror(p, o):
+            mirrored_policy = np.zeros((len(p), ))
+            for a, a_policy in enumerate(p):
+                (r1, c1), (r2, c2) = Board.decode(a, o)
+                width = obs.shape[1] - 1
+                c1 = width - c1
+                c2 = width - c2
+                a = Board.encode((r1, c1), (r2, c2), o)
+                mirrored_policy[a] = a_policy
+
+            return mirrored_policy, np.fliplr(obs)
 
         mirrored_data = []
         for data_samp in data:
-            for action, obs in zip(data_samp['actions'], data_samp['observations']):
-                mirrored_data.append((action, obs))
-                mirrored_data.append(create_mirror(action, obs))
+            for values, policies, obs in zip(data_samp['values'], data_samp['policies'], data_samp['observations']):
+                mirrored_data.append((values, policies, obs))
+                policies, obs = create_mirror(policies, obs)
+                mirrored_data.append((values, policies, obs))
 
         split = int(batches * batch_size * split)
-        for i, (action, obs) in enumerate(mirrored_data):
+        for i, (values, policies, obs) in enumerate(mirrored_data):
             if i % batch_size == 0:
 
                 (training_data if i >= split else test_data).append(
                     {
-                        'actions': [],
-                        'observations': []
+                        'observations': [],
+                        'policies': [],
+                        'values': []
                     }
                 )
-            (training_data if i >= split else test_data)[-1]['actions'].append(action)
+            (training_data if i >= split else test_data)[-1]['policies'].append(policies)
+            (training_data if i >= split else test_data)[-1]['values'].append(values)
             (training_data if i >= split else test_data)[-1]['observations'].append(obs)
             i += 1
 
