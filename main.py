@@ -1,6 +1,6 @@
 from MCTS import MCTS
+from elementGO.MCTSModel import Model
 from match3tile.env import Match3Env
-from model import Model
 from util.dataset import get_train_and_test_data
 from util.mp import async_pbar_auto_batcher
 from util.plotter import plot_distribution
@@ -59,16 +59,15 @@ def train_model():
 
     height, width, channels = env.observation_space
     model = Model(
-        height=height,
-        width=width,
-        channels=channels,
         action_space=env.action_space,
+        channels=channels,
+        features=256,
         learning_rate=0.005,
         momentum=0.9,
     )
 
     train_ds, test_ds = get_train_and_test_data()
-    model.fit(train_ds, test_ds)
+    model.train(train_ds, test_ds)
 
 
 if __name__ == '__main__':
