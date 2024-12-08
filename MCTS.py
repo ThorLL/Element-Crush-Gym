@@ -123,6 +123,11 @@ class MCTS:
         # for i in range(node.moves_left):  # Limit the depth of simulation
         #     node.step(random.choice(node.state.actions))
 
+        if node.game_score >= self.goal:
+            diff = node.game_score - self.goal
+            c = 5
+            node.game_score += diff ** c
+
         reward = node.game_score - node_score
         node.state = node_state
         node.actions = node_actions

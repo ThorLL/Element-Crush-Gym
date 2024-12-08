@@ -224,9 +224,6 @@ class Board:
 
         source, target = self.decode_action(action)
 
-        matches = []
-
-
         # TODO: Here we should add logic that checks for big bads (and maybe specials?) such that we avoid calls to match_at
         # If one of the tokens is a big bad we can simply add the cells 1 above, below, left and right to the match
         # if self.is_big_bad(self.array[source]):
@@ -330,7 +327,7 @@ class Board:
         match = []
 
         # I don't think we should end up in here if the cell is a big bad - Fix the swap function such that this is the case
-        token = self.quick_get_token_element(self.array[cell])
+        token = self.get_token_element(self.array[cell])
 
         # Checks the cells in the vertical and horizontal directions
         def scan(row_offset, col_offset):
@@ -344,13 +341,13 @@ class Board:
             # 3: The token has the same element as the cell we are scanning from
             while (0 <= next_row - row_offset and 0 <= next_col - col_offset and
                    self.array[next_row - row_offset, next_col - col_offset] != NONE_TOKEN and
-                   self.quick_get_token_element(self.array[next_row - row_offset, next_col - col_offset]) == token):
+                   self.get_token_element(self.array[next_row - row_offset, next_col - col_offset]) == token):
                 next_row -= row_offset
                 next_col -= col_offset
             scan_match.append((next_row, next_col))
             while (next_row + row_offset < self.height and next_col + col_offset < self.width and
                    self.array[next_row + row_offset, next_col + col_offset] != NONE_TOKEN and
-                   self.quick_get_token_element(self.array[next_row + row_offset, next_col + col_offset]) == token):
+                   self.get_token_element(self.array[next_row + row_offset, next_col + col_offset]) == token):
                 next_row += row_offset
                 next_col += col_offset
                 scan_match.append((next_row, next_col))

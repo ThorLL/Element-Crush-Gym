@@ -1,4 +1,5 @@
 
+import time
 from MCTS import MCTS
 from elementGO.MCTSModel import Model
 from match3tile.env import Match3Env
@@ -119,6 +120,37 @@ def perform_profiling():
 
 
 
+def mcts_samples():
+    seeds = [100, 150, 200, 250, 300]
+    rewards = []
+
+    move_count = 20 # 20 default
+    goal = 500      # 500 default
+
+    start_time = time.time()
+
+    for seed in seeds:
+        env = Match3Env(seed=seed, num_moves=move_count, env_goal=goal)
+        mcts = MCTS(env, 100, True)
+        mcts_moves = []
+        total_reward = 0
+
+        while env.moves_taken != env.num_moves:
+            action = mcts()
+            _, reward, done, won, _ = env.step(action)
+            total_reward += reward
+            mcts_moves.append(action)
+        rewards.append(total_reward)
+        print(f" - Seed: {seed}")
+        print(f" - Total reward: {total_reward}")
+        print(f" - MCTS moves: {mcts_moves}")
+        print()
+    
+    print("-" * 50)
+    print(f"Time taken: {time.time() - start_time}")
+    print(f"Rewards: {rewards}")
+    print(f"Average reward: {sum(rewards) / len(rewards)}")
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--profile", action="store_true", default=False, help="Run the profiler")
@@ -128,6 +160,29 @@ if __name__ == "__main__":
         perform_profiling()
         exit()
 
+    seed = 100
+    env = Match3Env(seed=seed, num_moves=20, env_goal=500)
+    mcts = MCTS(env, 100, False)
+
+    mcts_moves = []
+    total_reward = 0
+    
+    print("Performing \"optimized\" MCTS")
+    print("-" * 50)
+    start_time = time.time()
+    while env.moves_taken != env.num_moves:
+        action = mcts()
+        _, reward, done, won, _ = env.step(action)
+        total_reward += reward
+        mcts_moves.append(action)
+
+    print(f"Time taken: {time.time() - start_time:.2f} seconds")
+    print(f"Total reward: {total_reward}")
+    print(f"MCTS moves: {mcts_moves}")
 
 
-
+    # Show the MCTS moves
+    env_copy = Match3Env(seed=seed, num_moves=20, env_goal=500, render_mode="human")
+    for move in mcts_moves:
+        env_copy.step(move)
+        env_copy.render()
