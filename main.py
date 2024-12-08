@@ -1,16 +1,17 @@
-from fileinput import filename
+
 from MCTS import MCTS
 from elementGO.MCTSModel import Model
 from match3tile.env import Match3Env
 from util.dataset import get_train_and_test_data
-from util.mp import async_pbar_auto_batcher
-from util.plotter import plot_distribution
-from pickle import load, dump
 
 import cProfile
 import pstats
 from pstats import SortKey
 
+import os
+import argparse
+
+os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "hide"
 
 def random_task():
     env = Match3Env()
@@ -74,24 +75,8 @@ def train_model():
     train_ds, test_ds = get_train_and_test_data()
     model.train(train_ds, test_ds)
 
-# Using seed 100
-# Time before refactoring: 20.025s
 
-if __name__ == "__main__":
-    import os
-    os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "hide"
-    RUN_PROFILER = True
-
-    env = Match3Env(seed=100)
-    mcts = MCTS(env, 100, True)
-
-    if not os.path.exists("mcts.prof") or RUN_PROFILER:
-        cProfile.run("mcts.__call__()", "mcts.prof")
-    
-    p = pstats.Stats("mcts.prof")  # Load the profile stats
-
-
-    def override_pstats_prints():
+def override_pstats_prints():
         """
         By default, pstats only prints 3 decimal places. This function overrides the print functions to print 6 decimal places and slightly adjust the title position.
         Should probably be upgraded to use Tabulate or something similar.
@@ -104,6 +89,21 @@ if __name__ == "__main__":
             print('filename:lineno(function)', file=self.stream)
         pstats.f8 = f8_alt
         pstats.Stats.print_title = print_title
+
+# Using seed 100
+# Time before refactoring: 20.025s
+def perform_profiling():
+    SEED = 100
+    RUN_PROFILER = True
+
+    env = Match3Env(seed=SEED)
+    mcts = MCTS(env, 100, True)
+    if not os.path.exists("mcts.prof") or RUN_PROFILER:
+        profiler = cProfile.Profile()
+        profiler.runctx("mcts.__call__()", globals(), locals())
+        profiler.dump_stats("mcts.prof")
+    p = pstats.Stats("mcts.prof")
+
     override_pstats_prints()
 
     # Specify the files which we are interested in (Otherwise a lot of built-in stuff)
@@ -116,3 +116,18 @@ if __name__ == "__main__":
     }
     
     p.strip_dirs().sort_stats(SortKey.TIME).print_stats()
+
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--profile", action="store_true", default=False, help="Run the profiler")
+    args = parser.parse_args()
+
+    if args.profile:
+        perform_profiling()
+        exit()
+
+
+
+
