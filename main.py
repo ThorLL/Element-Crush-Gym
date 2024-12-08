@@ -121,7 +121,8 @@ def perform_profiling():
 
 
 def mcts_samples():
-    seeds = [100, 150, 200, 250, 300]
+    verbose = False
+    seeds = list(range(50, 1001, 50))
     rewards = []
 
     move_count = 20 # 20 default
@@ -130,8 +131,10 @@ def mcts_samples():
     start_time = time.time()
 
     for seed in seeds:
+        print(f"Running MCTS with seed {seed}")
+        mcts_start_time = time.time()
         env = Match3Env(seed=seed, num_moves=move_count, env_goal=goal)
-        mcts = MCTS(env, 100, True)
+        mcts = MCTS(env, 100, verbose)
         mcts_moves = []
         total_reward = 0
 
@@ -141,33 +144,28 @@ def mcts_samples():
             total_reward += reward
             mcts_moves.append(action)
         rewards.append(total_reward)
-        print(f" - Seed: {seed}")
+        print(f" - Time taken: {time.time() - mcts_start_time:.2f} seconds")
         print(f" - Total reward: {total_reward}")
         print(f" - MCTS moves: {mcts_moves}")
         print()
     
     print("-" * 50)
-    print(f"Time taken: {time.time() - start_time}")
-    print(f"Rewards: {rewards}")
-    print(f"Average reward: {sum(rewards) / len(rewards)}")
+    print("Results from running MCTS sample (optimized branch)")
+    print(f" - Sample count: {len(seeds)}")
+    print(f" - Seeds: {seeds}")
+    print(f" - Time taken: {time.time() - start_time:.2f} seconds")
+    print(f" - Rewards: {rewards}")
+    print(f" - Average reward: {sum(rewards) / len(rewards)}")
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--profile", action="store_true", default=False, help="Run the profiler")
-    args = parser.parse_args()
 
-    if args.profile:
-        perform_profiling()
-        exit()
-
-    seed = 100
-    env = Match3Env(seed=seed, num_moves=20, env_goal=500)
+def run_mcts(seed=100, move_count=20, goal=500, render=False):
+    env = Match3Env(seed=seed, num_moves=move_count, env_goal=goal)
     mcts = MCTS(env, 100, False)
 
     mcts_moves = []
     total_reward = 0
     
-    print("Performing \"optimized\" MCTS")
+    print(f"Performing \"optimized\" MCTS (seed: {seed}, moves: {move_count}, goal: {goal})")
     print("-" * 50)
     start_time = time.time()
     while env.moves_taken != env.num_moves:
@@ -180,9 +178,19 @@ if __name__ == "__main__":
     print(f"Total reward: {total_reward}")
     print(f"MCTS moves: {mcts_moves}")
 
+    if render:
+        env_copy = Match3Env(seed=seed, num_moves=move_count, env_goal=goal, render_mode="human")
+        for move in mcts_moves:
+            env_copy.step(move)
+            env_copy.render()
 
-    # Show the MCTS moves
-    env_copy = Match3Env(seed=seed, num_moves=20, env_goal=500, render_mode="human")
-    for move in mcts_moves:
-        env_copy.step(move)
-        env_copy.render()
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--profile", action="store_true", default=False, help="Run the profiler")
+    args = parser.parse_args()
+
+    if args.profile:
+        perform_profiling()
+        exit()
+
+    mcts_samples()
