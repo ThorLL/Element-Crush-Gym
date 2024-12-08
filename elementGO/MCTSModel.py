@@ -19,6 +19,7 @@ class Model(nnx.Module):
     def __init__(self, action_space, channels, features, learning_rate, momentum, rng=None):
         super().__init__()
         rng = rng or nnx.Rngs(0)
+        self.channels = channels
         self.conv = ConvLayer(channels,  out_features=256, rng=rng)
 
         self.residual_block = ResidualBlock(features, num_layers=40, rng=rng)
@@ -36,6 +37,7 @@ class Model(nnx.Module):
         )
 
     def __call__(self, x):
+        x = nnx.one_hot(x, self.channels)
         x = self.conv(x)
         x = self.residual_block(x)
         value = self.value_head(x)
