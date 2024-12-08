@@ -1,15 +1,13 @@
 import math
-from collections import namedtuple
+from collections import namedtuple, deque
+from pickle import NONE
 from random import choice
 
 import numpy as np
 
-from util.profiler import self_profile
-
 Swap_Event = namedtuple('Swap_Event', ['action', 'init_board', 'event_boards', 'actions'])
 
 NONE_TOKEN = -2147483648
-
 
 # match shapes
 V_LINE = 0
@@ -82,13 +80,20 @@ class Board:
                 matches = self.get_matches()
         else:
             self.array = init_board
-        self.actions = self.valid_actions()
+        self.actions = self.get_valid_actions()
 
     def clone(self):
         return Board((self.height, self.width, self.types), self.seed, np.copy(self.array))
 
     def get_token_element(self, token):
         return self.element_mask & token if not self.is_big_bad(token) else NONE_TOKEN
+    
+    def quick_get_token_element(self, token):
+        """ 
+        Equivalent to get_token_element but does not check if the token is a big bad. 
+        Ends up saving a lot of function calls and time 
+        """
+        return self.element_mask & token
 
     def get_token_type(self, token):
         return self.token_type_mask & token
@@ -96,8 +101,19 @@ class Board:
     def is_big_bad(self, token):
         return self.big_bad & token != 0
 
+    def is_special(self, token):
+        """
+        Returns True if the token is a special token (line or bomb)
+        """
+        return self.token_type_mask & token != 0
+
+    def is_in_bounds(self, row, col):
+        """
+        Returns True if the cell is within the bounds of the board
+        """
+        return 0 <= row < self.height and 0 <= col < self.width
+
     def fill_board(self):
-        callback = self_profile('fill_board')
         self.seed = (1 + self.seed) % (2**32 - 1)
         np.random.seed(self.seed)
         changed = []
@@ -108,22 +124,17 @@ class Board:
                 self.array[row, col] = np.random.choice(range(self.types))
                 changed.append((row, col))
 
-        if len(self.valid_actions()) == 0:
+        if len(self.get_valid_actions()) == 0:
             for (row, col) in changed:
                 self.array[row, col] = NONE_TOKEN
             self.fill_board()
-        callback()
 
     def remove_matches(self, matches: list[list[tuple[int, int]]]) -> np.array:
-        callback = self_profile('remove_matches')
         for match in matches:
             for row, col in match:
                 self.array[row, col] = NONE_TOKEN
-        callback()
 
     def drop(self):
-        callback = self_profile('drop')
-
         def drop_column(c):
             col = self.array[:, c]
 
@@ -131,13 +142,11 @@ class Board:
             non_tokens = np.full(self.height - tokens.size, NONE_TOKEN, dtype=np.int32)
 
             return np.concatenate((non_tokens, tokens))
-        callback()
 
         for column in range(self.width):
             self.array[:, column] = drop_column(column)
 
     def select(self, start, end, matches):
-        callback = self_profile('select')
         start_row, start_col = start
         if 0 <= start[0] < self.height and 0 <= start[1] < self.width and not any([start in match for match in matches]):
             matches.append([start])
@@ -148,11 +157,9 @@ class Board:
                 start = (start[0] + 1, start_col)
             if 0 <= start[0] < self.height and 0 <= start[1] < self.width and not any([start in match for match in matches]):
                 matches.append([start])
-        callback()
         return matches
 
     def handle_type(self, position, matches):
-        callback = self_profile('handle_type')
         match self.get_token_type(self.array[position]):
             case self.v_line:
                 self.select((0, position[1]), (self.height-1, position[1]), matches)
@@ -160,11 +167,9 @@ class Board:
                 self.select((position[0], 0), (position[0], self.width-1), matches)
             case self.bomb:
                 self.select((position[0]-1, position[1]-1), (position[0]+1, position[1]+1), matches)
-        callback()
         return matches
 
     def handle_swap_event(self, source, target, matches):
-        callback = self_profile('handle_swap_event')
         if self.is_big_bad(self.array[source]) and self.is_big_bad(self.array[target]):
             matches = [[(row, col)] for row in range(self.height) for col in range(self.width)]
             self.array = np.full(self.array.shape, NONE_TOKEN, dtype=np.int32)
@@ -208,11 +213,9 @@ class Board:
                         matches = self.handle_type(source, matches)
                     if any([target in match for match in matches]):
                         matches = self.handle_type(target, matches)
-        callback()
         return matches
 
     def swap(self, action: int, naive=False, recalculate_action=True) -> tuple[int, Swap_Event]:
-        callback = self_profile('swap')
         self.seed = (1 + self.seed) % (2**32 - 1)
         np.random.seed(self.seed)
         assert action in self.actions
@@ -221,7 +224,24 @@ class Board:
 
         source, target = self.decode_action(action)
 
+        matches = []
+
+
+        # TODO: Here we should add logic that checks for big bads (and maybe specials?) such that we avoid calls to match_at
+        # If one of the tokens is a big bad we can simply add the cells 1 above, below, left and right to the match
+        # if self.is_big_bad(self.array[source]):
+        #     for row, col in [(source[0] - 1, source[1]), (source[0] + 1, source[1]), (source[0], source[1] - 1), (source[0], source[1] + 1)]:
+        #         if self.is_in_bounds(row, col):
+        #             matches.append([(row, int(col))])
+    
+        # elif self.is_big_bad(self.array[target]):
+        #     for row, col in [(target[0] - 1, target[1]), (target[0] + 1, target[1]), (target[0], target[1] - 1), (target[0], target[1] + 1)]:
+        #         if self.is_in_bounds(row, col):
+        #             matches.append([(row, int(col))])
+        # else:
         matches = [match for match in [self.match_at(source), self.match_at(target)] if match]
+
+
 
         matches = self.handle_swap_event(source, target, matches)
 
@@ -230,7 +250,7 @@ class Board:
         # while any matches exists remove them and update array
         points = 0
         while True:
-            match_callback = self_profile('match check')
+
             for match in matches:
                 for token in match:
                     if self.is_big_bad(self.array[token]):
@@ -248,7 +268,7 @@ class Board:
 
                 if len(match) > 3:
                     shape = get_match_shape(match)
-                    element = self.get_token_element(self.array[match[0]])
+                    element = self.quick_get_token_element(self.array[match[0]]) # A big bad is seemingly never here
                     center = get_center(match)
                     if shape == T_L_SHAPE:
                         self.array[center] = self.bomb + element
@@ -261,7 +281,6 @@ class Board:
                     for match in matches:
                         if center in match:
                             match.remove(center)
-            match_callback()
             if naive:
                 break
             before_removing_match = np.copy(self.array)
@@ -276,8 +295,7 @@ class Board:
             if len(matches) == 0:
                 break
         if recalculate_action:
-            self.actions = self.valid_actions()
-        callback()
+            self.actions = self.get_valid_actions()
         return points, Swap_Event(action, initial_obs, events, self.actions)
 
     def swap_tokens(self, action: int) -> np.array:
@@ -286,8 +304,16 @@ class Board:
         self.array[source] = self.array[target]
         self.array[target] = source_value
 
+    # Same as swap_tokens but with already decoded action
+    def quick_swap_tokens(self, source: int, target: int) -> np.array:
+        """
+        Equivalent to swap_tokens but with already decoded action.
+        """
+        source_value = self.array[source]
+        self.array[source] = self.array[target]
+        self.array[target] = source_value
+
     def get_matches(self) -> list[list[tuple[int, int]]]:
-        callback = self_profile('get_matches')
         matches = []
         for row in range(self.height):
             for col in range(self.width):
@@ -296,30 +322,35 @@ class Board:
                 match_at = self.match_at((row, col))
                 if match_at:
                     matches.append(match_at)
-        callback()
         return matches
 
+    # Finds matches around a cell. This function is kinda bruh
     def match_at(self, cell) -> None | list[tuple[int, int]]:
-        callback = self_profile('match_at')
         row, col = cell
-        token = self.get_token_element(self.array[cell])
         match = []
 
+        # I don't think we should end up in here if the cell is a big bad - Fix the swap function such that this is the case
+        token = self.quick_get_token_element(self.array[cell])
+
+        # Checks the cells in the vertical and horizontal directions
         def scan(row_offset, col_offset):
             next_row = row
             next_col = col
-
             scan_match = []
 
+            # While for 
+            # 1: We are in bounds
+            # 2: The offset cell is not empty (NONE_TOKEN)
+            # 3: The token has the same element as the cell we are scanning from
             while (0 <= next_row - row_offset and 0 <= next_col - col_offset and
                    self.array[next_row - row_offset, next_col - col_offset] != NONE_TOKEN and
-                   self.get_token_element(self.array[next_row - row_offset, next_col - col_offset]) == token):
+                   self.quick_get_token_element(self.array[next_row - row_offset, next_col - col_offset]) == token):
                 next_row -= row_offset
                 next_col -= col_offset
             scan_match.append((next_row, next_col))
             while (next_row + row_offset < self.height and next_col + col_offset < self.width and
                    self.array[next_row + row_offset, next_col + col_offset] != NONE_TOKEN and
-                   self.get_token_element(self.array[next_row + row_offset, next_col + col_offset]) == token):
+                   self.quick_get_token_element(self.array[next_row + row_offset, next_col + col_offset]) == token):
                 next_row += row_offset
                 next_col += col_offset
                 scan_match.append((next_row, next_col))
@@ -339,26 +370,30 @@ class Board:
                 scan(1, 0)
                 scan(0, 1)
             match = [cell] + match
-        callback()
+
         return match
 
     def is_valid_action(self, action: int) -> bool:
-        callback = self_profile('is_valid_action')
         cell1, cell2 = self.decode_action(action)
-        if self.get_token_type(self.array[cell1]) != 0 and self.get_token_type(self.array[cell2]) != 0:
-            callback()
-            return True
-        if self.is_big_bad(self.array[cell1]) or self.is_big_bad(self.array[cell2]):
-            callback()
-            return True
-        if self.get_token_element(self.array[cell1]) == self.get_token_element(self.array[cell2]):
-            callback()
+        token1, token2 = self.array[cell1], self.array[cell2]
+        
+        # Early return for quickly identifiable actions - sorted by likelihood to save on function calls
+        # If the tokens have the same elements we CANNOT swap them
+        if self.quick_get_token_element(token1) == self.quick_get_token_element(token2):
             return False
+        # If the tokens are both special tokens we CAN swap them
+        if self.is_special(token1) and self.is_special(token2):
+            return True
+        # If one of the tokens is a big bad we CAN swap them
+        if self.is_big_bad(token1) or self.is_big_bad(token2):
+            return True
+        
+        # Else we need to test if the swap will result in a match
         board = np.copy(self.array)
-        self.swap_tokens(action)
+        self.quick_swap_tokens(cell1, cell2)
         is_valid = self.match_at(cell1) is not None or self.match_at(cell2) is not None
         self.array = board
-        callback()
+
         return is_valid
 
     def encode_action(self, tile1: tuple[int, int], tile2: tuple[int, int]) -> int:
@@ -397,9 +432,10 @@ class Board:
 
         return (row1, column1), (row2, column2)
 
-    def valid_actions(self) -> list[int]:
-        actions = self.height * (self.width - 1) + self.width * (self.height - 1)
-        return [i for i in range(actions) if self.is_valid_action(i)]
+    def get_valid_actions(self) -> list[int]:
+        all_actions = self.height * (self.width - 1) * 2
+        valid_actions = [action for action in range(all_actions) if self.is_valid_action(action)]
+        return valid_actions
 
     def argmax(self, pred: np.array) -> int | list[int]:
         def argmax_batch(batch):

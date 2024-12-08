@@ -24,7 +24,7 @@ class Node:
     def best_child(self, c):
         return max(self.children, key=lambda child: child.ucb1(c))
 
-    def step(self, action, deterministic=False):
+    def step(self, action, deterministic=True):
         if deterministic:
             np.random.seed(self.seed)
         else:
@@ -114,8 +114,14 @@ class MCTS:
         node_actions = node.actions
         node_score = node.game_score
 
+        # Ensures that the simulation is deterministic
+        np.random.seed(self.root.seed)
         for i in range(node.moves_left):  # Limit the depth of simulation
-            node.step(random.choice(node.state.actions))
+            node.step(np.random.choice(node.state.actions), True)
+
+        # Ensures that the simulation is non-deterministic (also change the deterministic boolean above):
+        # for i in range(node.moves_left):  # Limit the depth of simulation
+        #     node.step(random.choice(node.state.actions))
 
         reward = node.game_score - node_score
         node.state = node_state
