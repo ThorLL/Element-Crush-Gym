@@ -174,7 +174,7 @@ if __name__ == '__main__':
     Profiler.init()
 
     def g(t):
-        callback = self_profile('g', t)
+        callback = self_profile('g')
         if t == 0:
             callback()
             return
