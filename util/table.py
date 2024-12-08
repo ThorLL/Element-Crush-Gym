@@ -28,7 +28,7 @@ def build_table(columns, rows, min_col_width=8, spacing=1):
         table += '|'
         for i, data in enumerate(row):
             table += f'{align_center(str(data), column_widths[i], " ")}|'
-        table += f'\n{seperator if r != len(row) -1 else bottom}\n'
+        table += f'\n{seperator if r != len(rows) -1 else bottom}\n'
 
     return table
 
