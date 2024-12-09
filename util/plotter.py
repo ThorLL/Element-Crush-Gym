@@ -35,6 +35,7 @@ def plot_distribution(data):
     # Plot each distribution
 
     print(build_table(
+        'Samples table',
         ['Dataset', 'Mean', 'Min(Q0)', 'Q1', 'Median(Q2)', 'Q3', 'Max(Q5)', 'Standard Deviation'],
         [analysis.values() for analysis in analyses]
     ))
@@ -60,10 +61,11 @@ def plot_distribution(data):
 
 
 class SubPlot:
-    def __init__(self, label, x_values, y_values):
+    def __init__(self, label, x_values, y_values, x_step=1):
         self.label = label
         self.x_values = x_values
         self.y_values = y_values
+        self.x_step = x_step
 
         self.plot = None
 
@@ -71,13 +73,17 @@ class SubPlot:
         self.x_values.append(x)
         self.y_values.append(y)
 
+    def add_value(self, y):
+        self.x_values.append(self.x_values[-1] + self.x_step if len(self.x_values) > 0 else self.x_step)
+        self.y_values.append(y)
+
     def set_data(self, x_values, y_values):
         self.x_values = x_values
         self.y_values = y_values
 
-    def set_y_data(self, y_values, x_step):
+    def set_y_data(self, y_values):
         self.set_data(
-            list(range(0, x_step * len(y_values), x_step)),
+            list(range(self.x_step, self.x_step * (len(y_values) + 1), self.x_step)),
             y_values
         )
 
@@ -93,11 +99,11 @@ class Plot:
 
         self.plots: dict[str, SubPlot] = {}
 
-    def add_plot(self, label, x_values=None, y_values=None):
+    def add_plot(self, label, x_values=None, y_values=None, x_step=1):
         x_values = x_values or []
         y_values = y_values or []
         assert len(x_values) == len(y_values)
-        self.plots[label] = SubPlot(label, x_values, y_values)
+        self.plots[label] = SubPlot(label, x_values, y_values, x_step)
         return self.plots[label]
 
     def update(self):
@@ -127,19 +133,40 @@ class LivePlotter:
         self.fig, self.axes = plt.subplots(rows, cols, figsize=(cols * 6, rows * 6))
 
         for i, (title, plot) in enumerate(self.plots.items()):
-            for (label, sub_plot) in plot.plots.items():
-                sub_plot.plot = self.axes[i].plot(sub_plot.x_values, sub_plot.y_values, label=label, marker='o')
-            self.axes[i].set_title(plot.title)
-            self.axes[i].set_xlabel(plot.x_axis_label)
-            self.axes[i].set_ylabel(plot.y_axis_label)
-            self.axes[i].legend()
+            r = i % rows
+            c = int(i/rows)
+            idx = (r, c) if r > 1 and c > 1 else i
+            for label, sub_plot in plot.plots.items():
+                sub_plot.plot = self.axes[idx].plot(sub_plot.x_values, sub_plot.y_values, label=label, marker='o')[0]
+            self.axes[idx].set_title(plot.title)
+            self.axes[idx].set_xlabel(plot.x_axis_label)
+            self.axes[idx].set_ylabel(plot.y_axis_label)
+            self.axes[idx].legend()
+
+    def add_value_for(self, label, value):
+        print(label, value)
+        for plot in self.plots.values():
+            if label in plot.plots:
+                plot.plots[label].add_value(value)
 
     def update(self):
+        n_plots = len(self.plots)
+
+        rows, cols = None, None
+        for i in range(1, int(n_plots**0.5) + 1):
+            if n_plots % i == 0:
+                rows, cols = i, n_plots // i
+
         for plot in self.plots.values():
             plot.update()
         for ax in self.axes:
-            ax.relim()
-            ax.autoscale_view()
+            if rows > 1 and cols > 1:
+                for ay in ax:
+                    ay.relim()
+                    ay.autoscale_view()
+            else:
+                ax.relim()
+                ax.autoscale_view()
         self.fig.canvas.draw()
         self.fig.canvas.flush_events()
 
