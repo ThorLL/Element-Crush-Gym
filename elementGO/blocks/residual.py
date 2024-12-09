@@ -1,5 +1,4 @@
 import flax.nnx as nnx
-import jax.lax
 
 
 class ResidualLayer(nnx.Module):

@@ -4,7 +4,6 @@ from numpy import full
 from MCTS import MCTS
 from elementGO.MCTSModel import Model
 from match3tile.env import Match3Env
-from util.dataset import get_train_and_test_data
 
 import cProfile
 import pstats
@@ -12,6 +11,8 @@ from pstats import SortKey
 
 import os
 import argparse
+
+from util.dataset import Dataset
 
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "hide"
 
@@ -75,8 +76,8 @@ def train_model():
         momentum=0.9,
     )
 
-    train_ds, test_ds = get_train_and_test_data()
-    model.train(train_ds, test_ds)
+    train_ds, test_ds = Dataset(50000, type_switching=True, types=channels, type_switch_limit=24).with_batching(128).get_split(0.2)
+    model.train(train_ds, test_ds, 2, 50)
 
 
 def override_pstats_prints():
@@ -128,7 +129,7 @@ def perform_profiling(mode="full", sort_key="time", seed=100):
     override_pstats_prints()
 
     # Specify the files which we are interested in (Otherwise a lot of built-in stuff)
-    included_files = ["board.py", "MCTS.py", "profiler.py"]
+    included_files = ["board.py", "MCTS.py", "quick_math.py"]
 
     p.stats = {
         key: value
@@ -208,6 +209,9 @@ def mcts_single(seed=100, move_count=20, goal=500, simulations=100, render=False
 
 
 if __name__ == "__main__":
+    # mcts_single(move_count=10, render=True)
+    # mcts_single(move_count=10, render=False)
+    # exit()
     parser = argparse.ArgumentParser()
     parser.add_argument("--profile", nargs="?", action="store", const="full", choices=["quick", "full"])
     parser.add_argument("--sort", action="store", default="time", choices=["calls", "cumtime", "time"])
