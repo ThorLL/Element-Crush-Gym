@@ -13,6 +13,7 @@ import os
 import argparse
 
 from util.dataset import Dataset
+from util.pstate_override import override_pstats_prints
 
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "hide"
 
@@ -63,7 +64,6 @@ def nn_mcts_task():
         score += reward
     return score
 
-
 def train_model():
     env = Match3Env()
 
@@ -79,31 +79,13 @@ def train_model():
     train_ds, test_ds = Dataset(50000, type_switching=True, types=channels, type_switch_limit=24).with_batching(128).get_split(0.2)
     model.train(train_ds, test_ds, 2, 50)
 
+def create_env(seed=100, move_count=20, goal=500):
+    return Match3Env(seed=seed, num_moves=move_count, env_goal=goal)
 
-def override_pstats_prints():
-    """
-    By default, pstats only prints 3 decimal places. This function overrides the print functions to print 6 decimal places and slightly adjust the title position.
-    Should probably be upgraded to use Tabulate or something similar.
-    """
+def create_mcts(env, simulations=100, verbose=False, deterministic=False):
+    return MCTS(env, simulations, verbose, deterministic)
 
-    def f8_alt(x):
-        return "%9.6f" % x
-
-    def print_title(self):
-        print(
-            "   ncalls   tottime   percall   cumtime   percall",
-            end=" ",
-            file=self.stream,
-        )
-        print("filename:lineno(function)", file=self.stream)
-
-    pstats.f8 = f8_alt
-    pstats.Stats.print_title = print_title
-
-
-# Using seed 100
-# Time before refactoring: 20.025s
-def perform_profiling(mode="full", sort_key="time", seed=100):
+def perform_profiling(mode="full", sort_key="time", mcts:MCTS=None, file="mcts_new.prof"):
     """
     Runs the profiler on the MCTS algorithm and prints the results.
     mode: "full" or "quick".
@@ -112,19 +94,13 @@ def perform_profiling(mode="full", sort_key="time", seed=100):
     sort_key: "calls", "cumtime", "time". Sorts the profiler output by the specified key.
     """
 
-    print(
-        f"Running profiler: \n - Mode: {mode} \n - Sort key: {sort_key} \n - Seed: {seed}"
-    )
-    print("-" * 50)
+    assert mcts is not None, "MCTS object must be provided for profiling"
 
-    env = Match3Env(seed=seed)
-    mcts = MCTS(env, 100, True)
-
-    if mode == "full" or not os.path.exists("mcts.prof"):
+    if mode == "full" or not os.path.exists(file):
         profiler = cProfile.Profile()
         profiler.runctx("mcts.__call__()", globals(), locals())
-        profiler.dump_stats("mcts.prof")
-    p = pstats.Stats("mcts.prof")
+        profiler.dump_stats(file)
+    p = pstats.Stats(file)
 
     override_pstats_prints()
 
@@ -138,7 +114,8 @@ def perform_profiling(mode="full", sort_key="time", seed=100):
     }
 
     print()
-    p.strip_dirs().sort_stats(sort_key).print_stats()
+    p.strip_dirs()
+    p.sort_stats(sort_key).print_stats()
 
 
 def mcts_samples():
@@ -179,12 +156,12 @@ def mcts_samples():
     print(f" - Average reward: {sum(rewards) / len(rewards)}")
 
 
-def mcts_single(seed=100, move_count=20, goal=500, simulations=100, render=False, verbose=False):
+def mcts_single(seed=100, move_count=20, goal=500, simulations=100, render=False, verbose=False, deterministic=False):
     print(f"Performing MCTS (seed: {seed}, moves: {move_count}, goal: {goal})")
     print("-" * 50)
 
     env = Match3Env(seed=seed, num_moves=move_count, env_goal=goal)
-    mcts = MCTS(env, simulations, verbose)
+    mcts = MCTS(env, simulations, verbose, deterministic)
     mcts_moves = []
     total_reward = 0
 
@@ -209,16 +186,14 @@ def mcts_single(seed=100, move_count=20, goal=500, simulations=100, render=False
 
 
 if __name__ == "__main__":
-    # mcts_single(move_count=10, render=True)
-    # mcts_single(move_count=10, render=False)
-    # exit()
     parser = argparse.ArgumentParser()
     parser.add_argument("--profile", nargs="?", action="store", const="full", choices=["quick", "full"])
     parser.add_argument("--sort", action="store", default="time", choices=["calls", "cumtime", "time"])
+
     parser.add_argument("--seed", action="store", default=100)
-    parser.add_argument("--sims", action="store", default=100)
     parser.add_argument("--moves", action="store", default=20)
     parser.add_argument("--goal", action="store", default=500)
+    parser.add_argument("--sims", action="store", default=100)
     parser.add_argument("--deterministic", action="store_true", default=False)
     parser.add_argument("--render", action="store_true", default=False)
     parser.add_argument("--verbose", action="store_true", default=False)
@@ -228,11 +203,25 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.profile:
-        perform_profiling(args.profile, args.sort, args.seed)
+        env = create_env(args.seed, args.moves, args.goal)
+        mcts = create_mcts(env, args.sims, args.verbose, args.deterministic)
+
+        print("-" * 50)
+        print(f" Performing {args.profile} MCTS Profiling")
+        print(f" - Seed: {args.seed}")
+        print(f" - Moves: {args.moves}")
+        print(f" - Goal: {args.goal}")
+        print(f" - Simulations: {args.sims}")
+        print(f" - Verbose: {args.verbose}")
+        print(f" - Deterministic: {args.deterministic}")
+        print("-" * 50)
+
+
+        perform_profiling(args.profile, args.sort, mcts)
         exit()
 
     if args.mcts_single:
-        mcts_single(seed=args.seed, move_count=20, goal=500, simulations=100, render=args.render, verbose=args.verbose)
+        mcts_single(args.seed, args.moves, args.goal, args.sims, args.render, args.verbose)
         exit()
 
     if args.mcts_samples:
