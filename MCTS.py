@@ -6,8 +6,6 @@ from tqdm import tqdm
 from match3tile.board import Board
 import numpy as np
 
-from util.profiler import try_profile
-
 
 class Node:
     def __init__(self, state: Board, moves, game_score, parent=None, config=(0, 6)):
@@ -24,7 +22,7 @@ class Node:
     def best_child(self, c):
         return max(self.children, key=lambda child: child.ucb1(c))
 
-    def step(self, action, deterministic=False):
+    def step(self, action, deterministic=True):
         if deterministic:
             np.random.seed(self.seed)
         else:
@@ -97,12 +95,12 @@ class MCTS:
         return action, value, policy
 
     def simulation_step(self):
-        node = try_profile(self.tree_traversal, self.root)
+        node = self.tree_traversal(self.root)
         if node.visits > 0:
-            try_profile(node.expand, )
+            node.expand()
             node = node.children[0]
-        reward = try_profile(self.rollout, node)
-        try_profile(self.backpropagation, node, reward)
+        reward = self.rollout(node)
+        self.backpropagation(node, reward)
 
     def tree_traversal(self, node: Node):
         while len(node.children) != 0:
@@ -114,8 +112,19 @@ class MCTS:
         node_actions = node.actions
         node_score = node.game_score
 
+        # Ensures that the simulation is deterministic
+        np.random.seed(self.root.seed)
         for i in range(node.moves_left):  # Limit the depth of simulation
-            node.step(random.choice(node.state.actions))
+            node.step(np.random.choice(node.state.actions), True)
+
+        # Ensures that the simulation is non-deterministic (also change the deterministic boolean above):
+        # for i in range(node.moves_left):  # Limit the depth of simulation
+        #     node.step(random.choice(node.state.actions))
+
+        if node.game_score >= self.goal:
+            diff = node.game_score - self.goal
+            c = 5
+            node.game_score += diff ** c
 
         reward = node.game_score - node_score
         node.state = node_state
