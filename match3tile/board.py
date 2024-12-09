@@ -69,6 +69,9 @@ class Board:
 
         self.token_type_mask = self.bomb
 
+        self.action_space = self.height * (self.width - 1) * 2
+        self.action_decoder = {action: Board.decode(action, np.zeros((self.height, self.width))) for action in range(self.action_space)}
+
         if init_board is None:
             self.array = np.full((self.height, self.width), NONE_TOKEN, dtype=np.int32)
             self.fill_board()
@@ -332,38 +335,32 @@ class Board:
     def quick_match_check(self, cell):
         row, col = cell
         element = self.quick_get_token_element(self.array[cell])
+        board = self.array - (self.array & self.token_type_mask)
+        if row - 1 >= 0 and board[row - 1, col] == element:
+            if row - 2 >= 0 and board[row - 2, col] == element:
+                return True
+            elif row + 1 < self.height and board[row + 1, col] == element:
+                return True
+        if row + 1 < self.height and board[row + 1, col] == element:
+            if row + 2 < self.height and board[row + 2, col] == element:
+                return True
 
-        def something(slice_to_check, val):
-            slice_to_check -= slice_to_check & self.token_type_mask  # remove special typing
-
-            lower_min = lower_clamp(val - 2)
-            lower = val
-            while lower > lower_min:
-                if slice_to_check[lower - 1] == element:
-                    lower -= 1
-                else:
-                    break
-
-            upper_max = upper_clamp(val + 3, self.height)
-            upper = val
-            while upper + 1 < upper_max:
-                if slice_to_check[upper + 1] == element:
-                    upper += 1
-                else:
-                    break
-
-            return upper - lower > 1
-
-        if something(self.array[:, col], row):
-            return True
-
-        if something(self.array[row, :], col):
-            return True
-
+        if col - 1 >= 0 and board[row, col - 1] == element:
+            if col - 2 >= 0 and board[row, col - 2] == element:
+                return True
+            elif col + 1 < self.width and board[row, col + 1] == element:
+                return True
+            else:
+                return False
+        if col + 1 < self.width and board[row, col + 1] == element:
+            if col + 2 < self.width and board[row, col + 2] == element:
+                return True
         return False
 
     # Finds matches around a cell. This function is kinda bruh
     def match_at(self, cell) -> None | list[tuple[int, int]]:
+        if not self.quick_match_check(cell):
+            return None
         row, col = cell
         match = []
 
@@ -426,17 +423,12 @@ class Board:
         if self.quick_get_token_element(token1) == self.quick_get_token_element(token2):
             return False
         
-        # Else we need to test if the swap will result in a match
-        board = np.copy(self.array)
+
         self.quick_swap_tokens(cell1, cell2)
 
-        # is_valid_old = self.match_at(cell1) is not None or self.match_at(cell2) is not None
         is_valid_new = self.quick_match_check(cell1) or self.quick_match_check(cell2)
 
-        #if is_valid_old != is_valid_new:
-        #    is_valid_new = self.quick_match_check(cell1) or self.quick_match_check(cell2)
-
-        self.array = board
+        self.quick_swap_tokens(cell1, cell2)
 
         return is_valid_new
 
@@ -456,7 +448,7 @@ class Board:
         return min(source_row, target_row) * a + b + min(source_column, target_column)
 
     def decode_action(self, action: int) -> tuple[tuple[int, int], tuple[int, int]]:
-        return self.decode(action, self.array)
+        return self.action_decoder[action]
 
     @staticmethod
     def decode(action, board):
@@ -477,9 +469,7 @@ class Board:
         return (row1, column1), (row2, column2)
 
     def get_valid_actions(self) -> list[int]:
-        all_actions = self.height * (self.width - 1) * 2
-        self.look_up = {}
-        valid_actions = [action for action in range(all_actions) if self.is_valid_action(action)]
+        valid_actions = [action for action in range(self.action_space) if self.is_valid_action(action)]
         return valid_actions
 
     def random_action(self) -> int:
