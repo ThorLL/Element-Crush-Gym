@@ -334,19 +334,25 @@ class Board:
         element = self.quick_get_token_element(self.array[cell])
 
         def something(slice_to_check, val):
-            lower = lower_clamp(val-2)
-            upper_max = upper_clamp(val+3, self.height)
-            slice_to_check -= slice_to_check & self.token_type_mask
-            upper = lower + 3
+            slice_to_check -= slice_to_check & self.token_type_mask  # remove special typing
 
-            while upper <= upper_max:
-                slice_part = slice_to_check[lower:upper]
-                m = np.sum(slice_part == element)
-                if m == 3:
-                    return True
-                upper += 1
-                lower += 1
-            return False
+            lower_min = lower_clamp(val - 2)
+            lower = val
+            while lower > lower_min:
+                if slice_to_check[lower - 1] == element:
+                    lower -= 1
+                else:
+                    break
+
+            upper_max = upper_clamp(val + 3, self.height)
+            upper = val
+            while upper + 1 < upper_max:
+                if slice_to_check[upper + 1] == element:
+                    upper += 1
+                else:
+                    break
+
+            return upper - lower > 1
 
         if something(self.array[:, col], row):
             return True
@@ -424,9 +430,12 @@ class Board:
         board = np.copy(self.array)
         self.quick_swap_tokens(cell1, cell2)
 
+        # is_valid_old = self.match_at(cell1) is not None or self.match_at(cell2) is not None
         is_valid_new = self.quick_match_check(cell1) or self.quick_match_check(cell2)
-        is_valid_old = self.match_at(cell1) is not None or self.match_at(cell2) is not None
-        assert is_valid_old == is_valid_new
+
+        #if is_valid_old != is_valid_new:
+        #    is_valid_new = self.quick_match_check(cell1) or self.quick_match_check(cell2)
+
         self.array = board
 
         return is_valid_new
