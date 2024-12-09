@@ -1,10 +1,13 @@
+import numbers
+
 from util.strings import align_center
 
 
-def build_table(columns, rows, min_col_width=8, spacing=1):
+def build_table(title, columns, rows, min_col_width=8, spacing=1):
     column_widths = [len(name) for name in columns]
 
     rows = [[val if val is not None else 'n/a' for val in row] for row in rows]
+    rows = [[val if val is not numbers else round(val, 2) for val in row] for row in rows]
 
     for row in rows:
         for i, data in enumerate(row):
@@ -21,8 +24,8 @@ def build_table(columns, rows, min_col_width=8, spacing=1):
     top = top[:-1] + '┐'
     seperator = seperator[:-1] + '┤'
     bottom = bottom[:-1] + '┘'
-
-    table = f'{top}\n'
+    title = align_center(title, len(top)-2, '-')
+    table = f'{title}\n{top}\n'
     rows = [columns] + rows
     for r, row in enumerate(rows):
         table += '|'
@@ -35,6 +38,7 @@ def build_table(columns, rows, min_col_width=8, spacing=1):
 
 if __name__ == '__main__':
     print(build_table(
+        'test Table',
         ['name', 'col 1', 'col 2', 'col 3'],
         [
                 ['row 1',    'value 1', 'vaaaaalue 1', ''],

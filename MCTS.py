@@ -52,7 +52,8 @@ class Node:
 
 
 class MCTS:
-    def __init__(self, env, simulations=100, verbal=True):
+    def __init__(self, env, simulations=100, verbal=True, deterministic=False):
+        self.deterministic = deterministic
         self.root = Node(
             state=env.board,
             moves=env.num_moves - env.moves_taken,
@@ -113,13 +114,14 @@ class MCTS:
         node_score = node.game_score
 
         # Ensures that the simulation is deterministic
-        np.random.seed(self.root.seed)
-        for i in range(node.moves_left):  # Limit the depth of simulation
-            node.step(np.random.choice(node.state.actions), True)
-
-        # Ensures that the simulation is non-deterministic (also change the deterministic boolean above):
-        # for i in range(node.moves_left):  # Limit the depth of simulation
-        #     node.step(random.choice(node.state.actions))
+        if self.deterministic:
+            np.random.seed(self.root.seed)
+            for i in range(node.moves_left):  # Limit the depth of simulation
+                node.step(np.random.choice(node.state.actions), True)
+        else:
+            # Ensures that the simulation is non-deterministic (also change the deterministic boolean above):
+            for i in range(node.moves_left):  # Limit the depth of simulation
+                node.step(random.choice(node.state.actions))
 
         if node.game_score >= self.goal:
             diff = node.game_score - self.goal

@@ -1,41 +1,42 @@
+import math
+
 import flax.nnx as nnx
-import jax.numpy as jnp
-
-from matplotlib import pyplot as plt
-
 from optax import sgd
 from tqdm import tqdm
-from jax.nn import log_softmax
-from jax.tree_util import tree_leaves
 
 from elementGO.blocks.conv import ConvLayer
 from elementGO.blocks.policyHead import PolicyHead
 from elementGO.blocks.residual import ResidualBlock
 from elementGO.blocks.valueHead import ValueHead
-from util.plotter import LivePlotter
+from elementGO.util import policy_loss, value_loss, l2_regularization
+from util.table import build_table
 
 
 class Model(nnx.Module):
-    def __init__(self, action_space, channels, features, learning_rate, momentum, rng=None):
+    def __init__(self, height, width, action_space, channels, features, learning_rate, momentum, rng=None):
         super().__init__()
         rng = rng or nnx.Rngs(0)
-        self.channels = channels
+
         self.conv = ConvLayer(channels,  out_features=256, rng=rng)
 
         self.residual_block = ResidualBlock(features, num_layers=40, rng=rng)
 
-        self.value_head = ValueHead(features, rng=rng)
-        self.policy_head = PolicyHead(features, action_space, rng=rng)
+        self.value_head = ValueHead(features, height, width, rng=rng)
+        self.policy_head = PolicyHead(features, height, width, action_space, rng=rng)
 
         self.optimizer = nnx.Optimizer(self, sgd(learning_rate, momentum, nesterov=False))
         self.metrics = nnx.MultiMetric(
-            accuracy=nnx.metrics.Accuracy(),
             loss=nnx.metrics.Average('loss'),
             value_loss=nnx.metrics.Average('value_loss'),
             policy_loss=nnx.metrics.Average('policy_loss'),
-            regularization=nnx.metrics.Average('regularization')
+            regularization=nnx.metrics.Average('regularization'),
+            value_MAE=nnx.metrics.Average('value_MAE'),
+            policy_MAE=nnx.metrics.Average('policy_MAE'),
         )
 
+        self.channels = 2 ** (int(math.ceil(math.log2(channels))) + 2)
+
+    @nnx.jit
     def __call__(self, x):
         x = nnx.one_hot(x, self.channels)
         x = self.conv(x)
@@ -44,109 +45,95 @@ class Model(nnx.Module):
         policy = self.policy_head(x)
         return value, policy
 
-    def loss(self, W, batch):
-        x = jnp.array(batch['observations'])
-        value, policy = self(x)
-        policy_loss = self.policy_loss(policy, batch)
-        value_loss = self.value_loss(value, batch)
-        regularization = self.regularization(W)
-        return value_loss, policy_loss, regularization, policy
+    @nnx.jit
+    def loss(self, model, observation, values, policies):
+        value, policy = self(observation)
+        p_loss = policy_loss(policy, policies)
+        v_loss = value_loss(value, values)
+        r = l2_regularization(model)
+        total_loss = v_loss + p_loss + r
+        return total_loss, (v_loss, p_loss, r, (value, policy))
 
-    def value_loss(self, hat_value, batch):
-        true_value = batch['values']
-        return jnp.mean((hat_value - true_value) ** 2)
+    @nnx.jit
+    def update_metrics(self, aux_data, values, policies):
+        (v_loss, p_loss, r, (value, policy)) = aux_data
+        self.metrics.update(
+            loss=v_loss + p_loss + r,
+            value_loss=v_loss,
+            policy_loss=p_loss,
+            regularization=r,
+            value_MAE=(values - value).mean(),
+            policy_MAE=(policies - policy).mean()
+        )
 
-    def policy_loss(self, hat_policy, batch):
-        true_policy = batch['policies']
-        log_prob = log_softmax(hat_policy, axis=-1)
-        return -jnp.sum(true_policy * log_prob, axis=-1).mean()
-
-    def regularization(self, W, c=1e-4):
-        return c * sum(jnp.sum(jnp.square(w)) for w in tree_leaves(W))
-
-    def eval(self, batch: dict[str, list[any]]):
+    @nnx.jit
+    def eval(self, observation, values, policies):
         """Evaluate the model on the batch and update metrics."""
-        x = jnp.array(batch['observations'])
-        value, policy = self(x)
-        policy_loss = self.policy_loss(policy, batch)
-        value_loss = self.value_loss(value, batch)
+        _, aux_data = self.loss(self, observation, values, policies)
+        self.update_metrics(aux_data, values, policies)
 
-        total_loss = value_loss + policy_loss
-
-        self.metrics.update(
-            loss=total_loss,
-            value_loss=value_loss,
-            policy_loss=policy_loss,
-
-            logits=policy,
-            labels=jnp.array(batch['policies'])
-        )
-
-    def training_step(self, batch):
-        grad_fn = nnx.value_and_grad(self.loss, has_aux=False)
-        (value_loss, policy_loss, regularization, policy), grads = grad_fn(self, batch)
-        loss = value_loss + policy_loss + regularization
-
+    @nnx.jit
+    def training_step(self, observation, values, policies):
+        grad_fn = nnx.value_and_grad(self.loss, has_aux=True)
+        (_, aux_data), grads = grad_fn(self, observation, values, policies)
         self.optimizer.update(grads)
+        self.update_metrics(aux_data, values, policies)
 
-        self.metrics.update(
-            loss=loss,
-            value_loss=value_loss,
-            policy_loss=policy_loss,
+    def train(self, train_ds, test_ds, epochs, eval_every):
 
-            logits=policy,
-            labels=jnp.array(batch['policies'])
-        )
+        test_obs = test_ds['observations']
+        test_values = test_ds['values']
+        test_policies = test_ds['policies']
 
-        return loss
+        # plotter = LivePlotter()
+        # for label in self.metrics._metric_names:
+        #     plot = plotter.add_view('steps', label)
+        #     plot.add_plot(f'train_{label}', x_step=eval_every)
+        #     plot.add_plot(f'test_{label}', x_step=eval_every)
+        # plotter.build()
 
-    def train(self, train_ds, test_ds, epochs=2, eval_every=1):
-        metrics_history = {
-            'train_loss': [],
-            'train_accuracy': [],
-            'test_loss': [],
-            'test_accuracy': [],
-        }
+        training_rows = []
+        test_rows = []
 
-        plotter = LivePlotter()
-        loss_view = plotter.add_view('Steps', 'Loss')
-        training_loss = loss_view.add_plot('Train Loss')
-        testing_loss = loss_view.add_plot('Test Loss')
-
-        accuracy_view = plotter.add_view('Steps', 'Accuracy')
-        training_accuracy = accuracy_view.add_plot('Train Accuracy')
-        testing_accuracy = accuracy_view.add_plot('Test Accuracy')
-
-        # Set up live plotting
-        plt.ion()
         with tqdm(total=epochs * len(train_ds)) as pbar:
             for epoch in range(epochs):
                 for step, batch in enumerate(train_ds):
-
-                    self.training_step(batch)
-
-                    if (step * (1 + epoch)) % eval_every == 0:
-                        for metric, value in self.metrics.compute().items():  # Compute the metrics.
-                            metrics_history[f'train_{metric}'].append(value)  # Record the metrics.
-
-                        self.metrics.reset()  # Reset the metrics for the test set.
-
-                        # Compute the metrics on the test set after each training epoch.
-                        for test_batch in test_ds[:10]:
-                            self.eval(test_batch)
-
-                        # Log the test metrics.
-                        for metric, value in self.metrics.compute().items():
-                            metrics_history[f'test_{metric}'].append(value)
-                        self.metrics.reset()  # Reset the metrics for the next training epoch.
-
-                        # Update plots
-                        training_loss.set_y_data(metrics_history['train_loss'], eval_every)
-                        testing_loss.set_y_data(metrics_history['test_loss'], eval_every)
-                        training_accuracy.set_y_data([acc * 100 for acc in metrics_history['train_accuracy']], eval_every)
-                        testing_accuracy.set_y_data([acc * 100 for acc in metrics_history['test_accuracy']], eval_every)
-
+                    self.training_step(batch['observations'], batch['values'], batch['policies'])
                     pbar.n += 1
                     pbar.refresh()
+                    if (step * (1 + epoch)) % eval_every == 0:
+                        row = []
+                        for metric, value in self.metrics.compute().items():
+                            row.append(value.item())
+                        training_rows.append(row)
 
-        plotter.show()
+                            # plotter.add_value_for(f'train_{metric}', value)
+
+                        self.metrics.reset()
+
+                        self.eval(test_obs, test_values, test_policies)
+                        row = []
+                        for metric, value in self.metrics.compute().items():
+                            row.append(value.item())
+                            # plotter.add_value_for(f'test_{metric}', value)
+                        test_rows.append(row)
+                        print()
+                        print(
+                            build_table(
+                                'Training metrics',
+                                self.metrics._metric_names,
+                                training_rows
+                            )
+                        )
+
+                        print(
+                            build_table(
+                                'Testing metrics',
+                                self.metrics._metric_names,
+                                test_rows
+                            )
+                        )
+
+                        # plotter.update()
+
+        # plotter.show()

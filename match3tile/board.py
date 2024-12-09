@@ -5,6 +5,8 @@ from random import choice
 
 import numpy as np
 
+from util.quick_math import lower_clamp, upper_clamp
+
 Swap_Event = namedtuple('Swap_Event', ['action', 'init_board', 'event_boards', 'actions'])
 
 NONE_TOKEN = -2147483648
@@ -321,6 +323,33 @@ class Board:
                     matches.append(match_at)
         return matches
 
+    def quick_match_check(self, cell):
+        row, col = cell
+        element = self.quick_get_token_element(self.array[cell])
+
+        def something(slice_to_check, val):
+            lower = lower_clamp(val-2)
+            upper_max = upper_clamp(val+3, self.height)
+            slice_to_check -= slice_to_check & self.token_type_mask
+            upper = lower + 3
+
+            while upper <= upper_max:
+                slice_part = slice_to_check[lower:upper]
+                m = np.sum(slice_part == element)
+                if m == 3:
+                    return True
+                upper += 1
+                lower += 1
+            return False
+
+        if something(self.array[:, col], row):
+            return True
+
+        if something(self.array[row, :], col):
+            return True
+
+        return False
+
     # Finds matches around a cell. This function is kinda bruh
     def match_at(self, cell) -> None | list[tuple[int, int]]:
         row, col = cell
@@ -388,10 +417,13 @@ class Board:
         # Else we need to test if the swap will result in a match
         board = np.copy(self.array)
         self.quick_swap_tokens(cell1, cell2)
-        is_valid = self.match_at(cell1) is not None or self.match_at(cell2) is not None
+
+        is_valid_new = self.quick_match_check(cell1) or self.quick_match_check(cell2)
+        is_valid_old = self.match_at(cell1) is not None or self.match_at(cell2) is not None
+        assert is_valid_old == is_valid_new
         self.array = board
 
-        return is_valid
+        return is_valid_new
 
     def encode_action(self, tile1: tuple[int, int], tile2: tuple[int, int]) -> int:
         return self.encode(tile1, tile2, self.array)
@@ -431,17 +463,9 @@ class Board:
 
     def get_valid_actions(self) -> list[int]:
         all_actions = self.height * (self.width - 1) * 2
+        self.look_up = {}
         valid_actions = [action for action in range(all_actions) if self.is_valid_action(action)]
         return valid_actions
-
-    def argmax(self, pred: np.array) -> int | list[int]:
-        def argmax_batch(batch):
-            batch = [v if self.is_valid_action(i) else -1 for i, v in enumerate(batch)]
-            return np.argmax(np.array(batch)).item()
-        if len(pred.shape) == 1:
-            return argmax_batch(pred)
-        if len(pred.shape) == 2:
-            return [argmax_batch(p) for p in pred]
 
     def random_action(self) -> int:
         return choice(self.actions)
