@@ -111,7 +111,9 @@ def perform_profiling(mode="full", sort_key="time", seed=100):
     sort_key: "calls", "cumtime", "time". Sorts the profiler output by the specified key.
     """
 
-    print(f"Running profiler: \n - Mode: {mode} \n - Sort key: {sort_key} \n - Seed: {seed}")
+    print(
+        f"Running profiler: \n - Mode: {mode} \n - Sort key: {sort_key} \n - Seed: {seed}"
+    )
     print("-" * 50)
 
     env = Match3Env(seed=seed)
@@ -176,21 +178,21 @@ def mcts_samples():
     print(f" - Average reward: {sum(rewards) / len(rewards)}")
 
 
-def mcts_single(seed=100, move_count=20, goal=500, render=False):
-    env = Match3Env(seed=seed, num_moves=move_count, env_goal=goal)
-    mcts = MCTS(env, 100, False)
-
-    mcts_moves = []
-    total_reward = 0
-
+def mcts_single(seed=100, move_count=20, goal=500, render=False, verbose=False):
     print(
         f'Performing "optimized" MCTS (seed: {seed}, moves: {move_count}, goal: {goal})'
     )
     print("-" * 50)
+
+    env = Match3Env(seed=seed, num_moves=move_count, env_goal=goal)
+    mcts = MCTS(env, 1000, verbose)
+    mcts_moves = []
+    total_reward = 0
+
     start_time = time.time()
     while env.moves_taken != env.num_moves:
         action = mcts()
-        _, reward, done, won, _ = env.step(action)
+        _, reward, _, _, _ = env.step(action)
         total_reward += reward
         mcts_moves.append(action)
 
@@ -233,9 +235,38 @@ if __name__ == "__main__":
         default=100,
         help="Seed for the environment",
     )
+    parser.add_argument(
+        "--render",
+        action="store_true",
+        default=False,
+        help="Render the environment",
+    )
+    parser.add_argument(
+        "--mcts",
+        default=False,
+        action="store_true",
+        help="Run the MCTS algorithm",
+    )
+    parser.add_argument(
+        "--single_mcts",
+        default=False,
+        action="store_true",
+        help="Run the MCTS algorithm",
+    )
     args = parser.parse_args()
 
     if args.profile:
         perform_profiling(args.profile, args.sort, args.seed)
         exit()
 
+    if args.single_mcts:
+        mcts_single(
+            seed=args.seed,
+            move_count=20,
+            goal=500,
+            render=args.render, 
+            verbose=True
+        )
+        exit()
+
+    perform_profiling()

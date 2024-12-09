@@ -99,13 +99,19 @@ class Board:
         return self.token_type_mask & token
 
     def is_big_bad(self, token):
-        return self.big_bad & token != 0
+        return token == self.big_bad
 
     def is_special(self, token):
         """
         Returns True if the token is a special token (line or bomb)
         """
         return self.token_type_mask & token != 0
+    
+    def quick_is_special(self, token):
+        """
+        Returns True if the token is a special token (line or bomb). But faster!
+        """
+        return token > self.element_mask
 
     def is_in_bounds(self, row, col):
         """
@@ -220,9 +226,9 @@ class Board:
         np.random.seed(self.seed)
         assert action in self.actions
         initial_obs = np.copy(self.array)
-        self.swap_tokens(action)
 
         source, target = self.decode_action(action)
+        self.quick_swap_tokens(source, target)
 
         # TODO: Here we should add logic that checks for big bads (and maybe specials?) such that we avoid calls to match_at
         # If one of the tokens is a big bad we can simply add the cells 1 above, below, left and right to the match
@@ -376,7 +382,7 @@ class Board:
         
         # Early return for quickly identifiable actions - sorted by likelihood to save on function calls
         # If the tokens are both special tokens we CAN swap them
-        if self.is_special(token1) and self.is_special(token2):
+        if self.quick_is_special(token1) and self.quick_is_special(token2):
             return True
         # If one of the tokens is a big bad we CAN swap them
         if self.is_big_bad(token1) or self.is_big_bad(token2):
