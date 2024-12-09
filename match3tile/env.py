@@ -47,7 +47,7 @@ class Match3Env:
         return self.board.array
 
     def step(self, action: int) -> tuple[np.array, int, bool, bool, dict[str, any]]:
-        self.actions = self.board.get_valid_actions()
+        self.actions = self.board.actions
         move_score, self.event = self.board.swap(action)
         self.score += move_score
         self.moves_taken += 1
