@@ -178,14 +178,12 @@ def mcts_samples():
     print(f" - Average reward: {sum(rewards) / len(rewards)}")
 
 
-def mcts_single(seed=100, move_count=20, goal=500, render=False, verbose=False):
-    print(
-        f'Performing "optimized" MCTS (seed: {seed}, moves: {move_count}, goal: {goal})'
-    )
+def mcts_single(seed=100, move_count=20, goal=500, simulations=100, render=False, verbose=False):
+    print(f"Performing MCTS (seed: {seed}, moves: {move_count}, goal: {goal})")
     print("-" * 50)
 
     env = Match3Env(seed=seed, num_moves=move_count, env_goal=goal)
-    mcts = MCTS(env, 1000, verbose)
+    mcts = MCTS(env, simulations, verbose)
     mcts_moves = []
     total_reward = 0
 
@@ -211,62 +209,30 @@ def mcts_single(seed=100, move_count=20, goal=500, render=False, verbose=False):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--profile",
-        nargs="?",
-        action="store",
-        const="full",
-        type=str,
-        help="Run the profiler",
-        choices=["quick", "full"],
-    )
-    parser.add_argument(
-        "--sort",
-        action="store",
-        default="time",
-        type=str,
-        help="Sort the profiler output",
-        choices=["calls", "cumtime", "time"],
-    )
-    parser.add_argument(
-        "--seed",
-        action="store",
-        type=int,
-        default=100,
-        help="Seed for the environment",
-    )
-    parser.add_argument(
-        "--render",
-        action="store_true",
-        default=False,
-        help="Render the environment",
-    )
-    parser.add_argument(
-        "--mcts",
-        default=False,
-        action="store_true",
-        help="Run the MCTS algorithm",
-    )
-    parser.add_argument(
-        "--single_mcts",
-        default=False,
-        action="store_true",
-        help="Run the MCTS algorithm",
-    )
+    parser.add_argument("--profile", nargs="?", action="store", const="full", choices=["quick", "full"])
+    parser.add_argument("--sort", action="store", default="time", choices=["calls", "cumtime", "time"])
+    parser.add_argument("--seed", action="store", default=100)
+    parser.add_argument("--sims", action="store", default=100)
+    parser.add_argument("--moves", action="store", default=20)
+    parser.add_argument("--goal", action="store", default=500)
+    parser.add_argument("--deterministic", action="store_true", default=False)
+    parser.add_argument("--render", action="store_true", default=False)
+    parser.add_argument("--verbose", action="store_true", default=False)
+
+    parser.add_argument("--mcts_samples", default=False, action="store_true")
+    parser.add_argument("--mcts_single", default=False, action="store_true")
     args = parser.parse_args()
 
     if args.profile:
         perform_profiling(args.profile, args.sort, args.seed)
         exit()
 
-    if args.single_mcts:
-        mcts_single(
-            seed=args.seed,
-            move_count=20,
-            goal=500,
-            render=args.render, 
-            verbose=True
-        )
+    if args.mcts_single:
+        mcts_single(seed=args.seed, move_count=20, goal=500, simulations=100, render=args.render, verbose=args.verbose)
+        exit()
+
+    if args.mcts_samples:
+        mcts_samples()
         exit()
 
     perform_profiling()
