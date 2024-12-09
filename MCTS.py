@@ -6,8 +6,6 @@ from tqdm import tqdm
 from match3tile.board import Board
 import numpy as np
 
-from util.profiler import try_profile
-
 
 class Node:
     def __init__(self, state: Board, moves, game_score, parent=None, config=(0, 6)):
@@ -97,12 +95,12 @@ class MCTS:
         return action, value, policy
 
     def simulation_step(self):
-        node = try_profile(self.tree_traversal, self.root)
+        node = self.tree_traversal(self.root)
         if node.visits > 0:
-            try_profile(node.expand, )
+            node.expand()
             node = node.children[0]
-        reward = try_profile(self.rollout, node)
-        try_profile(self.backpropagation, node, reward)
+        reward = self.rollout(node)
+        self.backpropagation(node, reward)
 
     def tree_traversal(self, node: Node):
         while len(node.children) != 0:
