@@ -375,13 +375,13 @@ class Board:
         token1, token2 = self.array[cell1], self.array[cell2]
         
         # Early return for quickly identifiable actions - sorted by likelihood to save on function calls
-        # If the tokens have the same elements we CANNOT swap them
-        # If one of the tokens is a big bad we CAN swap them
         # If the tokens are both special tokens we CAN swap them
         if self.is_special(token1) and self.is_special(token2):
             return True
+        # If one of the tokens is a big bad we CAN swap them
         if self.is_big_bad(token1) or self.is_big_bad(token2):
             return True
+        # If the tokens have the same elements we CANNOT swap them
         if self.quick_get_token_element(token1) == self.quick_get_token_element(token2):
             return False
         
