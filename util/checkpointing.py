@@ -4,6 +4,7 @@ import orbax.checkpoint as ocp
 from flax import nnx
 
 from elementGO.MCTSModel import Model
+import match3tile
 from match3tile.env import Match3Env
 
 
@@ -114,17 +115,22 @@ def load(path: str, filename: str = "state") -> Model:
 
 
 def create_model():
-    env = Match3Env()
-
     model = Model(
-        action_space=env.action_space,
-        channels=6,
-        features=256,
+        match3tile.metadata.rows, match3tile.metadata.columns, match3tile.metadata.action_space,
+        channels=match3tile.metadata.types,
+        features=64,
         learning_rate=0.005,
         momentum=0.9,
     )
 
     return model
+
+def validate(model1, model2):
+    state1 = nnx.state(model1)
+    state2 = nnx.state(model2)
+
+    jax.tree.map(np.testing.assert_array_equal, state1, state2)
+
 
 def validate():
     model_to_save = create_model()
