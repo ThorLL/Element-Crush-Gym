@@ -9,7 +9,7 @@ from elementGO.blocks.policyHead import PolicyHead
 from elementGO.blocks.residual import ResidualBlock
 from elementGO.blocks.valueHead import ValueHead
 from elementGO.util import policy_loss, value_loss, l2_regularization
-from util.table import build_table
+from util.plotter import LivePlotter
 
 
 class Model(nnx.Module):
@@ -17,9 +17,11 @@ class Model(nnx.Module):
         super().__init__()
         rng = rng or nnx.Rngs(0)
 
-        self.conv = ConvLayer(channels,  out_features=256, rng=rng)
+        self.channels = 2 ** (int(math.ceil(math.log2(channels))) + 2)
 
-        self.residual_block = ResidualBlock(features, num_layers=40, rng=rng)
+        self.conv = ConvLayer(self.channels,  out_features=features, rng=rng)
+
+        self.residual_block = ResidualBlock(features, num_layers=5, rng=rng)
 
         self.value_head = ValueHead(features, height, width, rng=rng)
         self.policy_head = PolicyHead(features, height, width, action_space, rng=rng)
@@ -33,8 +35,6 @@ class Model(nnx.Module):
             value_MAE=nnx.metrics.Average('value_MAE'),
             policy_MAE=nnx.metrics.Average('policy_MAE'),
         )
-
-        self.channels = 2 ** (int(math.ceil(math.log2(channels))) + 2)
 
     @nnx.jit
     def __call__(self, x):
@@ -80,20 +80,14 @@ class Model(nnx.Module):
         self.update_metrics(aux_data, values, policies)
 
     def train(self, train_ds, test_ds, epochs, eval_every):
+        print('starting training')
 
-        test_obs = test_ds['observations']
-        test_values = test_ds['values']
-        test_policies = test_ds['policies']
-
-        # plotter = LivePlotter()
-        # for label in self.metrics._metric_names:
-        #     plot = plotter.add_view('steps', label)
-        #     plot.add_plot(f'train_{label}', x_step=eval_every)
-        #     plot.add_plot(f'test_{label}', x_step=eval_every)
-        # plotter.build()
-
-        training_rows = []
-        test_rows = []
+        plotter = LivePlotter()
+        for label in self.metrics._metric_names:
+            plot = plotter.add_view('steps', label)
+            plot.add_plot(f'train_{label}', x_step=eval_every)
+            plot.add_plot(f'test_{label}', x_step=eval_every)
+        plotter.build()
 
         with tqdm(total=epochs * len(train_ds)) as pbar:
             for epoch in range(epochs):
@@ -101,39 +95,19 @@ class Model(nnx.Module):
                     self.training_step(batch['observations'], batch['values'], batch['policies'])
                     pbar.n += 1
                     pbar.refresh()
-                    if (step * (1 + epoch)) % eval_every == 0:
-                        row = []
-                        for metric, value in self.metrics.compute().items():
-                            row.append(value.item())
-                        training_rows.append(row)
+                    if step % eval_every == 0 and step != 0:
 
-                            # plotter.add_value_for(f'train_{metric}', value)
+                        for metric, value in self.metrics.compute().items():
+                            plotter.add_value_for(f'train_{metric}', value)
 
                         self.metrics.reset()
+                        for test_batch in test_ds:
+                            self.eval(test_batch['observations'], test_batch['values'], test_batch['policies'])
 
-                        self.eval(test_obs, test_values, test_policies)
-                        row = []
                         for metric, value in self.metrics.compute().items():
-                            row.append(value.item())
-                            # plotter.add_value_for(f'test_{metric}', value)
-                        test_rows.append(row)
-                        print()
-                        print(
-                            build_table(
-                                'Training metrics',
-                                self.metrics._metric_names,
-                                training_rows
-                            )
-                        )
+                            plotter.add_value_for(f'test_{metric}', value)
+                        self.metrics.reset()
 
-                        print(
-                            build_table(
-                                'Testing metrics',
-                                self.metrics._metric_names,
-                                test_rows
-                            )
-                        )
+                        plotter.update()
 
-                        # plotter.update()
-
-        # plotter.show()
+        plotter.show()

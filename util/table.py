@@ -1,5 +1,3 @@
-import numbers
-
 from util.strings import align_center
 
 
@@ -7,7 +5,6 @@ def build_table(title, columns, rows, min_col_width=8, spacing=1):
     column_widths = [len(name) for name in columns]
 
     rows = [[val if val is not None else 'n/a' for val in row] for row in rows]
-    rows = [[val if val is not numbers else round(val, 2) for val in row] for row in rows]
 
     for row in rows:
         for i, data in enumerate(row):

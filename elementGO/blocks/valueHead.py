@@ -16,5 +16,5 @@ class ValueHead(nnx.Module):
         x = nnx.relu(x)
         x = x.reshape(x.shape[0], -1)
         x = nnx.relu(self.dense1(x))
-        x = nnx.tanh(self.dense2(x))
+        x = nnx.relu(self.dense2(x))
         return x
