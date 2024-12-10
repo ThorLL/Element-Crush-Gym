@@ -11,6 +11,7 @@ from elementGO.MCTSModel import Model
 from match3tile.boardv2 import BoardV2
 from match3tile.draw_board import BoardAnimator
 from mctslib.standard.mcts import MCTS
+from util.dataset import Dataset
 from util.mp import async_pbar_auto_batcher
 from util.plotter import plot_distribution
 from util.pstate_override import override_pstats_prints
@@ -75,8 +76,16 @@ def train_model():
         momentum=0.9,
     )
 
-    # train_ds, test_ds = Dataset(1000, fat_cache=True, mirroring=True, type_switching=True, types=channels, type_switch_limit=256).with_batching(128).get_split(0.1)
-    # model.train(train_ds, test_ds, 3, len(test_ds))
+    train_ds, test_ds = Dataset(
+        1000,
+        fat_cache=True,
+        mirroring=True,
+        type_switching=True,
+        types=match3tile.metadata.types,
+        type_switch_limit=256
+    ).with_batching(128).get_split(0.1)
+
+    model.train(train_ds, test_ds, 3, len(test_ds))
     return model
 
 
@@ -204,6 +213,7 @@ def sample(sample_size=100):
 
 
 if __name__ == "__main__":
+    train_model()
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--profile", nargs="?", action="store", const="full", choices=["quick", "full"])
