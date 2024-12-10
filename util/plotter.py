@@ -27,7 +27,7 @@ def plot_distribution(data):
             'median': values[int(0.5 * n_values)],
             'q3': values[int(0.75 * n_values)],
             'max': q5,
-            'standard_deviation': round(math.sqrt(variance), 2)
+            'standard_deviation': math.sqrt(variance) + 1e-10
         })
 
         bin_end = max(bin_end, q5)
