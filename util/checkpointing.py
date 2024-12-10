@@ -132,5 +132,9 @@ def validate():
     filename = "state"
 
     save(model_to_save, path, filename)
-
     model_loaded = load(path, filename)
+
+    saved_state = nnx.state(model_to_save)
+    loaded_state = nnx.state(model_loaded)
+
+    jax.tree.map(np.testing.assert_array_equal, saved_state, loaded_state)
