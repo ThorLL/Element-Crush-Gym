@@ -27,7 +27,7 @@ def plot_distribution(data):
             'median': values[int(0.5 * n_values)],
             'q3': values[int(0.75 * n_values)],
             'max': q5,
-            'standard_deviation': round(math.sqrt(variance), 2)
+            'standard_deviation': math.sqrt(variance) + 1e-10
         })
 
         bin_end = max(bin_end, q5)
@@ -137,14 +137,13 @@ class LivePlotter:
             c = int(i/rows)
             idx = (r, c) if r > 1 and c > 1 else i
             for label, sub_plot in plot.plots.items():
-                sub_plot.plot = self.axes[idx].plot(sub_plot.x_values, sub_plot.y_values, label=label, marker='o')[0]
-            self.axes[idx].set_title(plot.title)
-            self.axes[idx].set_xlabel(plot.x_axis_label)
-            self.axes[idx].set_ylabel(plot.y_axis_label)
-            self.axes[idx].legend()
+                sub_plot.plot = self.axes[r, c].plot(sub_plot.x_values, sub_plot.y_values, label=label, marker='o')[0]
+            self.axes[r, c].set_title(plot.title)
+            self.axes[r, c].set_xlabel(plot.x_axis_label)
+            self.axes[r, c].set_ylabel(plot.y_axis_label)
+            self.axes[r, c].legend()
 
     def add_value_for(self, label, value):
-        print(label, value)
         for plot in self.plots.values():
             if label in plot.plots:
                 plot.plots[label].add_value(value)
