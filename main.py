@@ -1,89 +1,83 @@
+import argparse
+import cProfile
+import os
+import pstats
 import time
 
-from numpy import full
-from MCTS import MCTS
+import numpy as np
+
+import match3tile
 from elementGO.MCTSModel import Model
+from match3tile.board import Board
+from match3tile.boardv2 import BoardV2
+from match3tile.draw_board import BoardAnimator
 from match3tile.env import Match3Env
-
-import cProfile
-import pstats
-from pstats import SortKey
-
-import os
-import argparse
-
-from util.dataset import Dataset
+from mctslib.nn.mcts import NeuralNetworkMCTS
+from mctslib.standard.mcts import MCTS
+from util.mp import async_pbar_auto_batcher
+from util.plotter import plot_distribution
 from util.pstate_override import override_pstats_prints
 
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "hide"
 
 
 def random_task():
-    env = Match3Env()
-    score = 0
-    while env.moves_taken != env.num_moves:
-        _, reward, _, _, _ = env.step(env.board.random_action())
-        score += reward
-    return score
+    state = BoardV2(20)
+    np.random.seed(state.seed)
+    while not state.is_terminal:
+        state = state.apply_action(np.random.choice(state.legal_actions))
+    return state.reward
 
 
 def naive_task():
-    env = Match3Env()
-    score = 0
-    while env.moves_taken != env.num_moves:
-        _, reward, _, _, _ = env.step(env.board.naive_action())
-        score += reward
-    return score
+    state = BoardV2(20)
+    while not state.is_terminal:
+        state = state.apply_action(state.naive_action)
+    return state.reward
 
 
 def best_task():
-    env = Match3Env()
-    score = 0
-    while env.moves_taken != env.num_moves:
-        _, reward, _, _, _ = env.step(env.board.best_action())
-        score += reward
-    return score
+    state = BoardV2(20)
+    while not state.is_terminal:
+        state = state.apply_action(state.best_action)
+    return state.reward
 
 
 def mcts_task():
-    env = Match3Env()
-    algo = MCTS(env, verbal=False)
-    score = 0
-    while env.moves_taken != env.num_moves:
-        _, reward, _, _, _ = env.step(algo())
-        score += reward
-    return score
+    state = BoardV2(20)
+    mcts = MCTS(state, 3, 800, False)
+    while not state.is_terminal:
+        action, _, _, = mcts()
+        state = state.apply_action(action)
+    return state.reward
 
 
 def nn_mcts_task():
-    env = Match3Env()
-    algo = MCTS(env, verbal=False)
-    score = 0
-    while env.moves_taken != env.num_moves:
-        _, reward, _, _, _ = env.step(algo())
-        score += reward
-    return score
+    state = BoardV2(20)
+    # algo = NeuralNetworkMCTS(state.board, 3, 100, verbose=False)
+    while not state.is_terminal:
+        state = state.apply_action(0)
+    return state.reward
 
 def train_model():
-    env = Match3Env()
-
-    height, width, channels = env.observation_space
     model = Model(
-        action_space=env.action_space,
-        channels=channels,
-        features=256,
+        match3tile.metadata.rows, match3tile.metadata.columns, match3tile.metadata.action_space,
+        channels=match3tile.metadata.types,
+        features=64,
         learning_rate=0.005,
         momentum=0.9,
     )
 
-    train_ds, test_ds = Dataset(50000, type_switching=True, types=channels, type_switch_limit=24).with_batching(128).get_split(0.2)
-    model.train(train_ds, test_ds, 2, 50)
+    # train_ds, test_ds = Dataset(1000, fat_cache=True, mirroring=True, type_switching=True, types=channels, type_switch_limit=256).with_batching(128).get_split(0.1)
+    # model.train(train_ds, test_ds, 3, len(test_ds))
+    return model
 
-def create_env(seed=100, move_count=20, goal=500):
-    return Match3Env(seed=seed, num_moves=move_count, env_goal=goal)
+def create_Board(seed=100, move_count=20, goal=500):
+    return BoardV2(n_actions=move_count, seed=seed)
 
-def create_mcts(env, simulations=100, verbose=False, deterministic=False):
-    return MCTS(env, simulations, verbose, deterministic)
+def create_mcts(board, exploration_weight=3, simulations=100, verbose=False):
+    return MCTS(board, exploration_weight, simulations, verbose)
+
 
 def perform_profiling(mode="full", sort_key="time", mcts:MCTS=None, file="mcts_new.prof"):
     """
@@ -105,7 +99,7 @@ def perform_profiling(mode="full", sort_key="time", mcts:MCTS=None, file="mcts_n
     override_pstats_prints()
 
     # Specify the files which we are interested in (Otherwise a lot of built-in stuff)
-    included_files = ["board.py", "MCTS.py", "quick_math.py"]
+    included_files = ["boardv2.py", "MCTS.py", "quick_math.py"]
 
     p.stats = {
         key: value
@@ -123,23 +117,24 @@ def mcts_samples():
     seeds = list(range(50, 1001, 50))
     rewards = []
 
-    move_count = 20  # 20 default
-    goal = 500  # 500 default
+    move_count = 20    # 20 default
+    simulations = 100  # 100 default
+    goal = 500         # 500 default
 
     start_time = time.time()
 
     for seed in seeds:
         print(f"Running MCTS with seed {seed}")
         mcts_start_time = time.time()
-        env = Match3Env(seed=seed, num_moves=move_count, env_goal=goal)
-        mcts = MCTS(env, 100, verbose)
+        state = BoardV2(move_count, seed=seed)
+        mcts = MCTS(state, 3, simulations, verbose)
         mcts_moves = []
         total_reward = 0
 
-        while env.moves_taken != env.num_moves:
-            action = mcts()
-            _, reward, done, won, _ = env.step(action)
-            total_reward += reward
+        while not state.is_terminal:
+            action, _, _ = mcts()
+            state = state.apply_action(action)
+            total_reward += state.reward
             mcts_moves.append(action)
         rewards.append(total_reward)
         print(f" - Time taken: {time.time() - mcts_start_time:.2f} seconds")
@@ -160,40 +155,65 @@ def mcts_single(seed=100, move_count=20, goal=500, simulations=100, render=False
     print(f"Performing MCTS (seed: {seed}, moves: {move_count}, goal: {goal})")
     print("-" * 50)
 
-    env = Match3Env(seed=seed, num_moves=move_count, env_goal=goal)
-    mcts = MCTS(env, simulations, verbose, deterministic)
+    state = BoardV2(move_count, seed=seed)
+    mcts = MCTS(state, 3, simulations, verbose)
     mcts_moves = []
-    total_reward = 0
 
     start_time = time.time()
-    while env.moves_taken != env.num_moves:
-        action = mcts()
-        _, reward, _, _, _ = env.step(action)
-        total_reward += reward
+    while not state.is_terminal:
+        action, _, _ = mcts()
+        state = state.apply_action(action)
         mcts_moves.append(action)
 
     print(f"Time taken: {time.time() - start_time:.2f} seconds")
-    print(f"Total reward: {total_reward}")
+    print(f"Total reward: {state.reward}")
     print(f"MCTS moves: {mcts_moves}")
 
     if render:
-        env_copy = Match3Env(
-            seed=seed, num_moves=move_count, env_goal=goal, render_mode="human"
-        )
+        board = BoardV2(move_count, seed=seed)
+        renderer = BoardAnimator(1, 60, board.array)
         for move in mcts_moves:
-            env_copy.step(move)
-            env_copy.render()
+            time.sleep(2)
+            board.apply_action(move)
+            renderer.draw(board.array)
+
+
+def sample(sample_size=100):
+    random_action_scores = async_pbar_auto_batcher(random_task, sample_size)
+    naive_score = async_pbar_auto_batcher(naive_task, sample_size)
+    best_score = async_pbar_auto_batcher(best_task, sample_size)
+    mcts_score = async_pbar_auto_batcher(mcts_task, sample_size)
+
+    plot_distribution({
+        'Random actions': random_action_scores,
+        'Naive actions': naive_score,
+        'Best actions': best_score,
+        'MCTS actions': mcts_score,
+    })
 
 
 if __name__ == "__main__":
+
+    for _ in range(1000):
+        state = BoardV2(100)
+        mcts = MCTS(state, 3, 100, verbose=True)
+
+        while not state.is_terminal:
+            action, _, _ = mcts()
+            state = state.apply_action(action)
+            old_board = Board((9, 9, 6), init_board=state.array)
+            assert state.legal_actions == old_board.actions
+
+    sample()
     parser = argparse.ArgumentParser()
     parser.add_argument("--profile", nargs="?", action="store", const="full", choices=["quick", "full"])
     parser.add_argument("--sort", action="store", default="time", choices=["calls", "cumtime", "time"])
 
-    parser.add_argument("--seed", action="store", default=100)
-    parser.add_argument("--moves", action="store", default=20)
-    parser.add_argument("--goal", action="store", default=500)
-    parser.add_argument("--sims", action="store", default=100)
+    parser.add_argument("--seed", action="store", type=int, default=100)
+    parser.add_argument("--moves", action="store", type=int, default=20)
+    parser.add_argument("--goal", action="store", type=int, default=500)
+    parser.add_argument("--sims", action="store", type=int, default=1000)
+    parser.add_argument("--exploration_weight", action="store", type=float, default=3.0)
     parser.add_argument("--deterministic", action="store_true", default=False)
     parser.add_argument("--render", action="store_true", default=False)
     parser.add_argument("--verbose", action="store_true", default=False)
@@ -203,8 +223,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.profile:
-        env = create_env(args.seed, args.moves, args.goal)
-        mcts = create_mcts(env, args.sims, args.verbose, args.deterministic)
+        board = create_Board()
+        mcts = create_mcts(board, args.exploration_weight, args.sims, args.verbose)
 
         print("-" * 50)
         print(f" Performing {args.profile} MCTS Profiling")
@@ -215,7 +235,6 @@ if __name__ == "__main__":
         print(f" - Verbose: {args.verbose}")
         print(f" - Deterministic: {args.deterministic}")
         print("-" * 50)
-
 
         perform_profiling(args.profile, args.sort, mcts)
         exit()

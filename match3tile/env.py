@@ -2,7 +2,7 @@ from random import randint
 
 import numpy as np
 
-from match3tile.board import Board
+from match3tile.boardv2 import BoardV2
 
 
 class Match3Env:
@@ -33,10 +33,9 @@ class Match3Env:
         self.num_moves = num_moves
         self.score, self.moves_taken = 0, 0
 
-        self.observation_space = (height, width, num_types)
         self.action_space = height * (width - 1) + width * (height - 1)
 
-        self.board = Board(self.observation_space, self.seed)
+        self.board = BoardV2(self.num_moves, seed=self.seed)
 
         assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
@@ -47,8 +46,8 @@ class Match3Env:
         return self.board.array
 
     def step(self, action: int) -> tuple[np.array, int, bool, bool, dict[str, any]]:
-        self.actions = self.board.actions
-        move_score, self.event = self.board.swap(action)
+        self.actions = self.board.legal_actions
+        move_score, self.event = self.board.apply_action(action)
         self.score += move_score
         self.moves_taken += 1
 
@@ -62,7 +61,7 @@ class Match3Env:
         else:
             self.seed = (1 + self.seed) % 2**32 - 1
         self.score, self.moves_taken = 0, 0
-        self.board = Board(self.observation_space, self.seed)
+        self.board = BoardV2(self.num_moves, seed=self.seed)
         return self.board.array, {}
 
     def render(self):
@@ -74,10 +73,10 @@ class Match3Env:
 
         if self.render_mode == 'human':
             self.board_animator.draw(self.event.init_board)
-            self.board_animator.draw_actions(self.event.init_board, self.actions)
-            # time.sleep(1)
-            self.board_animator.show_swap(self.board.decode_action(self.event.action), self.event.init_board)
-            for state, next_state, falls in self.event.event_boards:
-                self.board_animator.show_matches(state, next_state)
-                self.board_animator.show_falls(falls, next_state)
-            self.board_animator.draw(self.board.array)
+            # self.board_animator.draw_actions(self.event.init_board, self.actions)
+            # # time.sleep(1)
+            # self.board_animator.show_swap(self.board.decode_action(self.event.action), self.event.init_board)
+            # for state, next_state, falls in self.event.event_boards:
+            #     self.board_animator.show_matches(state, next_state)
+            #     self.board_animator.show_falls(falls, next_state)
+            # self.board_animator.draw(self.board.array)

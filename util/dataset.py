@@ -6,35 +6,37 @@ from pickle import dump, load
 import numpy as np
 from tqdm import tqdm
 
-from MCTS import MCTS
-from match3tile.board import Board
-from match3tile.env import Match3Env
+from match3tile import decode, encode
+from match3tile.boardv2 import BoardV2
+from mctslib.standard.mcts import MCTS
 from util.mp import batched_async_pbar
 
 
 def task(data):
     callback, batch_size = data
-    env = Match3Env()
-    obs = env.init()
     data = {
         'observations': [],
-        'policies': []
+        'policies': [],
+        'values': []
     }
-    mcts = MCTS(env, verbal=False)
+    state = BoardV2(20)
+
+    mcts = MCTS(state, 3, 100, False)
     for _ in range(batch_size):
-        action, value, policy = mcts.analyse()
-        policies = np.zeros((env.action_space,))
-        for a, p in zip(env.board.actions, policy):
+        action, value, policy_logits = mcts()
+
+        policies = np.zeros((state.action_space,))
+        for a, p in zip(state.legal_actions, policy_logits):
             policies[a] = p
 
-        data['observations'].append(obs)
+        data['observations'].append(state.array)
         data['policies'].append(policies)
+        data['values'].append(value)
 
-        obs, reward, done, won, _ = env.step(action)
-        callback()
-        if done:
-            obs, _ = env.reset()
-            mcts = MCTS(env, verbal=False)
+        state = state.apply_action(action)
+        if state.is_terminal:
+            state = BoardV2(20)
+            mcts = MCTS(state, 3, 100, False)
 
     return [data]
 
@@ -46,7 +48,8 @@ class Dataset:
         dataset_path = f'{size}.ds'
         self.dataset = {
             'observations': [],
-            'policies': []
+            'policies': [],
+            'values': []
         }
 
         self.size = size
@@ -91,7 +94,9 @@ class Dataset:
                 with open(fat_cache_file, 'wb') as write_handle:
                     dump(self.dataset, write_handle)
 
-        self.dataset['values'] = [np.max(policies) for policies in self.dataset['policies']]
+        upper = max(self.dataset['values'])
+        self.dataset['values'] = [value / upper for value in self.dataset['values']]
+
         self._batching = None
 
     def _load_or_create(self, dataset_path):
@@ -116,17 +121,17 @@ class Dataset:
         def mirror_action(_action, _board):
             if _action in self.mirror:
                 return self.mirror[_action]
-            (r1, c1), (r2, c2) = Board.decode(_action, _board)
-            width = _board.shape[1] - 1
-            c1 = width - c1
-            c2 = width - c2
-            mirrored_action = Board.encode((r1, c1), (r2, c2), _board)
+            board_with = _board.shape[1]
+            (r1, c1), (r2, c2) = decode(_action, board_with)
+            c1 = board_with - 1 - c1
+            c2 = board_with - 1 - c2
+            mirrored_action = encode((r1, c1), (r2, c2), board_with)
             self.mirror[_action] = mirrored_action
             self.mirror[mirrored_action] = _action
             return mirrored_action
 
         with tqdm(total=self.size) as pbar:
-            for observation, policies in list(zip(*self.dataset.values())):
+            for observation, policies, values in list(zip(*self.dataset.values())):
                 self.dataset['observations'].append(np.fliplr(observation))
 
                 mirrored_policy = np.zeros((len(policies),))
@@ -135,6 +140,7 @@ class Dataset:
                     mirrored_policy[mirror_action(idx, observation)] = policy
 
                 self.dataset['policies'].append(mirrored_policy)
+                self.dataset['values'].append(values)
                 pbar.n += 2
                 pbar.refresh()
 
@@ -148,9 +154,10 @@ class Dataset:
         self.size *= limit
         new_observations = []
         new_policies = []
+        new_values = []
 
         with tqdm(total=self.size) as pbar:
-            for observation, policies in list(zip(*self.dataset.values())):
+            for observation, policies, values in list(zip(*self.dataset.values())):
                 special_tokes = observation & mask
                 observation -= special_tokes
                 pattern = np.vectorize(value_to_letter.get)(observation)
@@ -169,8 +176,10 @@ class Dataset:
 
                 new_observations.extend(new_boards)
                 new_policies.extend([policies] * len(new_boards))
+                new_values.extend([values] * len(new_boards))
         self.dataset['observations'] = new_observations
         self.dataset['policies'] = new_policies
+        self.dataset['values'] = new_values
 
     def with_batching(self, batch_size):
         self._batching = batch_size
@@ -178,7 +187,7 @@ class Dataset:
 
     def get_split(self, test_data_split=0.2):
         test_data_split = int(test_data_split * self.size)
-        test_data = {k: jnp.array(v[:test_data_split]) for k, v in self.dataset.items()}
+        test_data = {k: v[:test_data_split] for k, v in self.dataset.items()}
         training_data = {k: v[test_data_split:] for k, v in self.dataset.items()}
 
         if self._batching is not None:
@@ -187,9 +196,18 @@ class Dataset:
                     key: jnp.array(data[lower: min(self.size - test_data_split, lower + self._batching)])
                     for key, data in training_data.items()
                 }
-                for lower in range(0, self.size - test_data_split, self._batching)
+                for lower in tqdm(range(0, self.size - test_data_split, self._batching))
+            ]
+            test = [
+                {
+                    key: jnp.array(data[lower: min(test_data_split, lower + self._batching)])
+                    for key, data in test_data.items()
+                }
+                for lower in tqdm(range(0, test_data_split, self._batching))
             ]
             training_data = train
+            test_data = test
         else:
             training_data = {k: jnp.array(v) for k, v in training_data.items()}
+            test_data = {k: jnp.array(v) for k, v in test_data.items()}
         return training_data, test_data

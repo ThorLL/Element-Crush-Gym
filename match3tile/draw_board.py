@@ -5,7 +5,7 @@ import pygame
 from pygame import Surface
 from os import listdir
 
-from match3tile.board import Board, NONE_TOKEN
+from match3tile import metadata, decode
 
 BLOCK_SIZE = 70
 PADDING = 3
@@ -13,9 +13,10 @@ IMAGE_RADIUS = 32
 
 
 class BoardAnimator:
-    def __init__(self, animation_speed, fps, board: Board):
+    def __init__(self, animation_speed, fps, board: np.ndarray):
         self.animation_speed = animation_speed
-        self.window_size = (BLOCK_SIZE*board.width+2, BLOCK_SIZE*board.height)
+        height, width = metadata.rows, metadata.columns
+        self.window_size = (BLOCK_SIZE*width+2, BLOCK_SIZE*height)
         self.fps = fps
         pygame.init()
         pygame.display.init()
@@ -28,16 +29,16 @@ class BoardAnimator:
 
         images = {
             0: [pygame.image.load(f"{dir_path}/images/default/{image}") for image in image_names],
-            board.v_line: [pygame.image.load(f"{dir_path}/images/Vline/{image}") for image in image_names],
-            board.h_line: [pygame.image.load(f"{dir_path}/images/Hline/{image}") for image in image_names],
-            board.bomb: [pygame.image.load(f"{dir_path}/images/bomb/{image}") for image in image_names],
+            2 * (metadata.type_mask + 1): [pygame.image.load(f"{dir_path}/images/Vline/{image}") for image in image_names],
+            metadata.type_mask+1: [pygame.image.load(f"{dir_path}/images/Hline/{image}") for image in image_names],
+            metadata.special_type_mask: [pygame.image.load(f"{dir_path}/images/bomb/{image}") for image in image_names],
         }
         big_bad = pygame.image.load(f"{dir_path}/images/bigBad.png")
 
         self.get_token_image = (
             lambda token:
-            big_bad if board.is_big_bad(token) or token == NONE_TOKEN
-            else images[board.get_token_type(token)][board.get_token_element(token)]
+            big_bad if token == metadata.mega_token or token == 0
+            else images[(token & metadata.special_type_mask)][(token & metadata.type_mask) - 1]
         )
 
     def draw_token(self, canvas: Surface, token, row, col):
@@ -69,7 +70,7 @@ class BoardAnimator:
     def draw_actions(self, board: np.array, actions: list[int]):
         def draw_action(canvas):
             for action in actions:
-                source, target = Board.decode(action, board)
+                source, target = decode(action, board)
                 pygame.draw.line(
                     canvas,
                     (0, 255, 0),
@@ -88,7 +89,7 @@ class BoardAnimator:
 
         def blinking_token_draw(canvas, row, col):
             self.draw_token(canvas, board[row, col], row, col)
-            if next_board[row, col] == NONE_TOKEN and blink:
+            if next_board[row, col] == 0 and blink:
                 pygame.draw.circle(
                     canvas,
                     (255, 255, 255),
@@ -97,7 +98,7 @@ class BoardAnimator:
                 )
 
         def token_draw(canvas, row, col):
-            if next_board[row, col] != NONE_TOKEN:
+            if next_board[row, col] != 0:
                 self.draw_token(canvas, board[row, col], row, col)
 
         while highlight_time > time:
@@ -122,36 +123,36 @@ class BoardAnimator:
         for col in range(width):
             col_cnt = 0
             for row in range(height):
-                if board[row, col] == NONE_TOKEN:
+                if board[row, col] == 0:
                     col_cnt += 1
 
             for row in range(height):
                 if row >= col_cnt:
-                    falls[row, col] = NONE_TOKEN
+                    falls[row, col] = 0
 
         # TODO merge logic for tokens falling on the grid and new tokens spawning in
         for column in range(width):
             for row in range(height - 1, 0, -1):
-                if board[row, column] != NONE_TOKEN:
+                if board[row, column] != 0:
                     continue
                 n_falls = 0
                 for above_row in range(row, -1, -1):
-                    if board[above_row, column] != NONE_TOKEN:
+                    if board[above_row, column] != 0:
                         break
                     n_falls += 1
 
                 for above_row in range(row, -1, -1):
                     falling_tokens[above_row, column] = (n_falls, board[above_row, column].item())
                 break
-        falling_tokens = {key: value for key, value in falling_tokens.items() if board[key] != NONE_TOKEN}
+        falling_tokens = {key: value for key, value in falling_tokens.items() if board[key] != 0}
 
         for column in range(width):
-            tiles_to_fall = sum([1 if value else 0 for value in (falls[:, column] != NONE_TOKEN)])
+            tiles_to_fall = sum([1 if value else 0 for value in (falls[:, column] != 0)])
             if tiles_to_fall == 0:
                 continue
             out_of_screen_row = 0
             for row in range(height - 1, -1, -1):
-                if falls[row, column] == NONE_TOKEN:
+                if falls[row, column] == 0:
                     continue
                 out_of_screen_row -= 1
                 falling_tokens[(out_of_screen_row, column)] = (tiles_to_fall, falls[row, column].item())
@@ -160,7 +161,7 @@ class BoardAnimator:
         settled_tokens = {}
 
         def token_draw(canvas, r, c):
-            if board[r, c] == NONE_TOKEN or (r, c) in falling_tokens or (r, c) in settled_tokens:
+            if board[r, c] == 0 or (r, c) in falling_tokens or (r, c) in settled_tokens:
                 return
             if (r, c) in falling_tokens:
                 self.draw_token(canvas, falling_tokens[(r, c)][1], fall_counter + r + time / fall_time, c)
