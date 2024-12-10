@@ -79,15 +79,16 @@ class Model(nnx.Module):
         self.optimizer.update(grads)
         self.update_metrics(aux_data, values, policies)
 
-    def train(self, train_ds, test_ds, epochs, eval_every):
+    def train(self, train_ds, test_ds, epochs, eval_every, plot=True):
         print('starting training')
 
-        plotter = LivePlotter()
-        for label in self.metrics._metric_names:
-            plot = plotter.add_view('steps', label)
-            plot.add_plot(f'train_{label}', x_step=eval_every)
-            plot.add_plot(f'test_{label}', x_step=eval_every)
-        plotter.build()
+        if plot:
+            plotter = LivePlotter()
+            for label in self.metrics._metric_names:
+                plot = plotter.add_view('steps', label)
+                plot.add_plot(f'train_{label}', x_step=eval_every)
+                plot.add_plot(f'test_{label}', x_step=eval_every)
+            plotter.build()
 
         with tqdm(total=epochs * len(train_ds)) as pbar:
             for epoch in range(epochs):
@@ -96,18 +97,20 @@ class Model(nnx.Module):
                     pbar.n += 1
                     pbar.refresh()
                     if step % eval_every == 0 and step != 0:
-
-                        for metric, value in self.metrics.compute().items():
-                            plotter.add_value_for(f'train_{metric}', value)
+                        
+                        if plot:
+                            for metric, value in self.metrics.compute().items():
+                                plotter.add_value_for(f'train_{metric}', value)
 
                         self.metrics.reset()
                         for test_batch in test_ds:
                             self.eval(test_batch['observations'], test_batch['values'], test_batch['policies'])
 
-                        for metric, value in self.metrics.compute().items():
-                            plotter.add_value_for(f'test_{metric}', value)
+                        if plot:
+                            for metric, value in self.metrics.compute().items():
+                                plotter.add_value_for(f'test_{metric}', value)
                         self.metrics.reset()
 
-                        plotter.update()
+                        if plot: plotter.update()
 
-        plotter.show()
+        if plot: plotter.show()
