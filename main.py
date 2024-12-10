@@ -11,6 +11,7 @@ from elementGO.MCTSModel import Model
 from match3tile.boardv2 import BoardV2
 from match3tile.draw_board import BoardAnimator
 from mctslib.standard.mcts import MCTS
+from util import checkpointing
 from util.dataset import Dataset
 from util.mp import async_pbar_auto_batcher
 from util.plotter import plot_distribution
@@ -212,6 +213,36 @@ def sample(sample_size=100):
     })
 
 
+def test_save_load():
+    model1 = Model(
+        match3tile.metadata.rows, match3tile.metadata.columns, match3tile.metadata.action_space,
+        channels=match3tile.metadata.types,
+        features=64,
+        learning_rate=0.005,
+        momentum=0.9,
+    )
+
+    train_ds_1, test_ds_2 = Dataset(10, fat_cache=True, mirroring=True, type_switching=True, types=match3tile.metadata.types, type_switch_limit=256).with_batching(128).get_split(0.1)
+    model1.train(train_ds_1, test_ds_2, 3, len(test_ds_2), plot=False)
+
+    model2 = Model(
+        match3tile.metadata.rows, match3tile.metadata.columns, match3tile.metadata.action_space,
+        channels=match3tile.metadata.types,
+        features=32,
+        learning_rate=0.01,
+        momentum=0.8,
+    )
+    train_ds_2, test_ds_2 = Dataset(10, fat_cache=True, mirroring=True, type_switching=True, types=match3tile.metadata.types, type_switch_limit=256).with_batching(128).get_split(0.1)
+    model2.train(train_ds_2, test_ds_2, 3, len(test_ds_2), plot=False)
+
+    checkpointing.save(model1, "model1", False)
+    model1_loaded = checkpointing.load("model1", False)
+
+    assert checkpointing.compare_models(model1, model1_loaded), "Model1 and Model1_loaded are not the same"
+    assert not checkpointing.compare_models(model1, model2), "Model1 and Model2 are the same"
+    print("All tests passed")
+
+
 if __name__ == "__main__":
     train_model()
 
@@ -257,4 +288,3 @@ if __name__ == "__main__":
         mcts_samples()
         exit()
 
-    perform_profiling()
