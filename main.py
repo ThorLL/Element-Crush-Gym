@@ -8,11 +8,8 @@ import numpy as np
 
 import match3tile
 from elementGO.MCTSModel import Model
-from match3tile.board import Board
 from match3tile.boardv2 import BoardV2
 from match3tile.draw_board import BoardAnimator
-from match3tile.env import Match3Env
-from mctslib.nn.mcts import NeuralNetworkMCTS
 from mctslib.standard.mcts import MCTS
 from util.mp import async_pbar_auto_batcher
 from util.plotter import plot_distribution
@@ -45,7 +42,16 @@ def best_task():
 
 def mcts_task():
     state = BoardV2(20)
-    mcts = MCTS(state, 3, 800, False)
+    mcts = MCTS(state, 3, 666, False, deterministic=False)
+    while not state.is_terminal:
+        action, _, _, = mcts()
+        state = state.apply_action(action)
+    return state.reward
+
+
+def deterministic_mcts_task():
+    state = BoardV2(20)
+    mcts = MCTS(state, 3, 666, False, deterministic=True)
     while not state.is_terminal:
         action, _, _, = mcts()
         state = state.apply_action(action)
@@ -58,6 +64,7 @@ def nn_mcts_task():
     while not state.is_terminal:
         state = state.apply_action(0)
     return state.reward
+
 
 def train_model():
     model = Model(
@@ -72,14 +79,16 @@ def train_model():
     # model.train(train_ds, test_ds, 3, len(test_ds))
     return model
 
+
 def create_Board(seed=100, move_count=20, goal=500):
     return BoardV2(n_actions=move_count, seed=seed)
+
 
 def create_mcts(board, exploration_weight=3, simulations=100, verbose=False):
     return MCTS(board, exploration_weight, simulations, verbose)
 
 
-def perform_profiling(mode="full", sort_key="time", mcts:MCTS=None, file="mcts_new.prof"):
+def perform_profiling(mode="full", sort_key="time", mcts: MCTS = None, file="mcts_new.prof"):
     """
     Runs the profiler on the MCTS algorithm and prints the results.
     mode: "full" or "quick".
@@ -117,9 +126,9 @@ def mcts_samples():
     seeds = list(range(50, 1001, 50))
     rewards = []
 
-    move_count = 20    # 20 default
+    move_count = 20  # 20 default
     simulations = 100  # 100 default
-    goal = 500         # 500 default
+    goal = 500  # 500 default
 
     start_time = time.time()
 
@@ -183,28 +192,19 @@ def sample(sample_size=100):
     naive_score = async_pbar_auto_batcher(naive_task, sample_size)
     best_score = async_pbar_auto_batcher(best_task, sample_size)
     mcts_score = async_pbar_auto_batcher(mcts_task, sample_size)
+    dmt_mcts_score = async_pbar_auto_batcher(deterministic_mcts_task, sample_size)
 
     plot_distribution({
         'Random actions': random_action_scores,
         'Naive actions': naive_score,
         'Best actions': best_score,
         'MCTS actions': mcts_score,
+        'DMT MCTS actions': dmt_mcts_score,
     })
 
 
 if __name__ == "__main__":
 
-    for _ in range(1000):
-        state = BoardV2(100)
-        mcts = MCTS(state, 3, 100, verbose=True)
-
-        while not state.is_terminal:
-            action, _, _ = mcts()
-            state = state.apply_action(action)
-            old_board = Board((9, 9, 6), init_board=state.array)
-            assert state.legal_actions == old_board.actions
-
-    sample()
     parser = argparse.ArgumentParser()
     parser.add_argument("--profile", nargs="?", action="store", const="full", choices=["quick", "full"])
     parser.add_argument("--sort", action="store", default="time", choices=["calls", "cumtime", "time"])
