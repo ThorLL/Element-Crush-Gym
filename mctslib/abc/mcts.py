@@ -88,13 +88,14 @@ class BaseMCTS(ABC):
 
         # core mcts logic
         node = self._root
+
         for iteration in range(self._simulations):
             # Selection
             while not node.state.is_terminal and node.is_fully_expanded:
-                node = node.best_child(self._exploration_weight)
+                node = node.best_child(node.state.n_actions)
 
             # Expansion
-            if not (node.state.is_terminal or node.is_fully_expanded):
+            if not node.state.is_terminal and not node.is_fully_expanded:
                 node = node.expand()
 
             # Simulation
@@ -110,18 +111,16 @@ class BaseMCTS(ABC):
                 pbar.refresh()
 
         # Select best child
-        best_child = max(self._root.children.values(), key=lambda c: c.visits)
+        action, best_child = max(self._root.children.items(), key=lambda kv: kv[1].visits)
 
-        action = 0
-        for a, child in self._root.children.items():
-            if best_child == child:
-                action = a
-                break
-
-        policies = best_child.policies
-        value = best_child.reward
+        value, policies = self._root.exploitation, self._root.policies
+        node = self._root
+        while not node.state.is_terminal and node.is_fully_expanded:
+            node = node.best_child(0)
+        value = node.state.reward
 
         # update root for next call
+        best_child.parent = None
         self._root = best_child
 
         # dispose of pbar

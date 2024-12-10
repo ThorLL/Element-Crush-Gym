@@ -4,8 +4,6 @@ import os
 import pstats
 import time
 
-import numpy as np
-
 import match3tile
 from elementGO.MCTSModel import Model
 from match3tile.boardv2 import BoardV2
@@ -13,59 +11,9 @@ from match3tile.draw_board import BoardAnimator
 from mctslib.standard.mcts import MCTS
 from util import checkpointing
 from util.dataset import Dataset
-from util.mp import async_pbar_auto_batcher
-from util.plotter import plot_distribution
 from util.pstate_override import override_pstats_prints
 
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "hide"
-
-
-def random_task():
-    state = BoardV2(20)
-    np.random.seed(state.seed)
-    while not state.is_terminal:
-        state = state.apply_action(np.random.choice(state.legal_actions))
-    return state.reward
-
-
-def naive_task():
-    state = BoardV2(20)
-    while not state.is_terminal:
-        state = state.apply_action(state.naive_action)
-    return state.reward
-
-
-def best_task():
-    state = BoardV2(20)
-    while not state.is_terminal:
-        state = state.apply_action(state.best_action)
-    return state.reward
-
-
-def mcts_task():
-    state = BoardV2(20)
-    mcts = MCTS(state, 3, 666, False, deterministic=False)
-    while not state.is_terminal:
-        action, _, _, = mcts()
-        state = state.apply_action(action)
-    return state.reward
-
-
-def deterministic_mcts_task():
-    state = BoardV2(20)
-    mcts = MCTS(state, 3, 666, False, deterministic=True)
-    while not state.is_terminal:
-        action, _, _, = mcts()
-        state = state.apply_action(action)
-    return state.reward
-
-
-def nn_mcts_task():
-    state = BoardV2(20)
-    # algo = NeuralNetworkMCTS(state.board, 3, 100, verbose=False)
-    while not state.is_terminal:
-        state = state.apply_action(0)
-    return state.reward
 
 
 def train_model():
@@ -78,15 +26,18 @@ def train_model():
     )
 
     train_ds, test_ds = Dataset(
-        1000,
-        fat_cache=True,
+        10000,
+        fat_cache=False,
         mirroring=True,
         type_switching=True,
         types=match3tile.metadata.types,
-        type_switch_limit=256
-    ).with_batching(128).get_split(0.1)
+        type_switch_limit=64
+    ).sample(1280000).with_batching(128).get_split(0.2)
 
     model.train(train_ds, test_ds, 3, len(test_ds))
+
+    checkpointing.save(model, "model", False)
+
     return model
 
 
@@ -195,22 +146,6 @@ def mcts_single(seed=100, move_count=20, goal=500, simulations=100, render=False
             time.sleep(2)
             board.apply_action(move)
             renderer.draw(board.array)
-
-
-def sample(sample_size=100):
-    random_action_scores = async_pbar_auto_batcher(random_task, sample_size)
-    naive_score = async_pbar_auto_batcher(naive_task, sample_size)
-    best_score = async_pbar_auto_batcher(best_task, sample_size)
-    mcts_score = async_pbar_auto_batcher(mcts_task, sample_size)
-    dmt_mcts_score = async_pbar_auto_batcher(deterministic_mcts_task, sample_size)
-
-    plot_distribution({
-        'Random actions': random_action_scores,
-        'Naive actions': naive_score,
-        'Best actions': best_score,
-        'MCTS actions': mcts_score,
-        'DMT MCTS actions': dmt_mcts_score,
-    })
 
 
 def test_save_load():

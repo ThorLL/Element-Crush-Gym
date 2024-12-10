@@ -19,24 +19,27 @@ def task(data):
         'policies': [],
         'values': []
     }
-    state = BoardV2(20)
+    count = 0
 
-    mcts = MCTS(state, 3, 100, False)
-    for _ in range(batch_size):
-        action, value, policy_logits = mcts()
+    env_actions = 20
 
-        policies = np.zeros((state.action_space,))
-        for a, p in zip(state.legal_actions, policy_logits):
-            policies[a] = p
+    while True:
+        if count > batch_size:
+            break
+        state = BoardV2(env_actions)
+        mcts = MCTS(state, 3, 256, False, False)
+        while not state.is_terminal:
+            action, _, policy_logits = mcts()
+            policies = np.zeros((state.action_space,))
+            for a, p in zip(state.legal_actions, policy_logits):
+                policies[a] = p
 
-        data['observations'].append(state.array)
-        data['policies'].append(policies)
-        data['values'].append(value)
-
-        state = state.apply_action(action)
-        if state.is_terminal:
-            state = BoardV2(20)
-            mcts = MCTS(state, 3, 100, False)
+            data['observations'].append(state.array)
+            data['policies'].append(policies)
+            state = state.apply_action(action)
+            count += 1
+            callback()
+        data['values'].extend([state.reward] * env_actions)
 
     return [data]
 
@@ -94,10 +97,8 @@ class Dataset:
                 with open(fat_cache_file, 'wb') as write_handle:
                     dump(self.dataset, write_handle)
 
-        upper = max(self.dataset['values'])
-        self.dataset['values'] = [value / upper for value in self.dataset['values']]
-
         self._batching = None
+        self._sample_size = None
 
     def _load_or_create(self, dataset_path):
         try:
@@ -107,9 +108,13 @@ class Dataset:
         except:
             print('No cache found, creating dataset')
             mcts_data = batched_async_pbar(task, self.size)
+
             for d in mcts_data:
                 for data_key, data_value in d.items():
                     self.dataset[data_key].extend(data_value)
+
+            values = np.array(self.dataset['values'])
+            self.dataset['values'] = values / np.max(values)
 
             with open(dataset_path, 'wb') as write_handle:
                 dump(self.dataset, write_handle)
@@ -181,14 +186,21 @@ class Dataset:
         self.dataset['policies'] = new_policies
         self.dataset['values'] = new_values
 
+    def sample(self, sample_size):
+        self._sample_size = sample_size
+        return self
+
     def with_batching(self, batch_size):
         self._batching = batch_size
         return self
 
     def get_split(self, test_data_split=0.2):
         test_data_split = int(test_data_split * self.size)
-        test_data = {k: v[:test_data_split] for k, v in self.dataset.items()}
-        training_data = {k: v[test_data_split:] for k, v in self.dataset.items()}
+
+        sample = {k: v[:self._sample_size] for k, v in self.dataset.items()}
+
+        test_data = {k: v[:test_data_split] for k, v in sample.items()}
+        training_data = {k: v[test_data_split:] for k, v in sample.items()}
 
         if self._batching is not None:
             train = [

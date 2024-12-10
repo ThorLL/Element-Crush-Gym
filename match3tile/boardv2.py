@@ -224,6 +224,8 @@ class BoardV2(State):
         return mask
 
     def apply_action(self, action) -> 'BoardV2':
+        if self.is_terminal:
+            return self
         np.random.seed(self.seed)
         reward = 0
         source, target = metadata.actions[action]
@@ -348,7 +350,7 @@ class BoardV2(State):
 
     @property
     def is_terminal(self) -> bool:
-        return self.n_actions == 0
+        return self.n_actions < 1
 
     @property
     def reward(self) -> float:
