@@ -1,3 +1,4 @@
+import random
 from typing import List, Any
 
 import numpy as np
@@ -37,8 +38,8 @@ def get_center(match):
 
 
 class BoardV2(State):
-    def __init__(self, n_actions, array=None, seed=0):
-        self.seed = seed
+    def __init__(self, n_actions, array=None, seed=None):
+        self.seed = seed or random.randint(0, 2 ** 31 - 1)
         self.n_actions = n_actions
 
         self._reward = 0
@@ -55,6 +56,12 @@ class BoardV2(State):
                 mask, matches = BoardV2.get_matches(self.array)
 
         self._actions = []
+
+    def clone(self):
+        my_clone = BoardV2(self.n_actions, np.copy(self.array), self.seed)
+        my_clone._reward = self._reward
+        my_clone._actions = self._actions
+        return my_clone
 
     @property
     def action_space(self):
@@ -135,7 +142,7 @@ class BoardV2(State):
         token_board = self.array & metadata.type_mask
         for action, (cell1, cell2) in metadata.actions.items():
             token1, token2 = token_board[cell1], token_board[cell2]
-            if self.array[cell1] > metadata.type_mask and self.array[cell2] > metadata.type_mask:  # check special tokens
+            if token1 == 0 or token2 == 0 or (self.array[cell1] > metadata.type_mask and self.array[cell2] > metadata.type_mask):  # check special tokens
                 self._actions.append(action)
                 continue
             if token1 == token2:  # ignore same typed tokens
@@ -149,7 +156,7 @@ class BoardV2(State):
                     self._actions.append(action)
         if len(self._actions) > 0:
             return self._actions
-
+        np.random.seed(self.seed)
         special_mask = (self.array > metadata.type_mask)
         special_tokens = np.zeros(self.array.shape)
         special_tokens[special_mask] = self.array[special_mask]
@@ -207,12 +214,16 @@ class BoardV2(State):
     def get_match_spawn_mask(matches, array):
         mask = np.zeros((metadata.rows, metadata.columns))
         for match in [match for match in matches if len(match) > 3]:
-            mask[get_center(match)] = array[match[0]] + get_match_shape(match)
+            shape = get_match_shape(match)
+            if shape == metadata.special_type_mask:
+                mask[get_center(match)] = array[match[0]] + shape
+            elif len(match) >= 5:
+                mask[get_center(match)] = metadata.mega_token
+            else:
+                mask[get_center(match)] = array[match[0]] + shape
         return mask
 
     def apply_action(self, action) -> 'BoardV2':
-        if self.is_terminal:
-            return self
         np.random.seed(self.seed)
         reward = 0
         source, target = metadata.actions[action]
@@ -228,7 +239,7 @@ class BoardV2(State):
             if x <= type_mask:         # normal token
                 return 2
             if x == mega_token:        # mega token
-                return 500
+                return 250
             if x < special_type_mask:  # line token
                 return 25
             return 50                   # has to be bomb
@@ -256,9 +267,9 @@ class BoardV2(State):
                 v_line, h_line = token_type + 2 * (type_mask+1), token_type + type_mask + 1
                 mask = (token_board == token_type)
                 token_board[mask] = 0
-                for i, idx in enumerate(np.argwhere(mask)):
-                    if special_tokens[idx] == 0:
-                        special_tokens[idx] = v_line if i % 2 == 0 else h_line
+                for n, (i, j)  in enumerate(np.argwhere(mask)):
+                    if special_tokens[i, j] == 0:
+                        special_tokens[i, j] = v_line if n % 2 == 0 else h_line
             case (t1, t2) if t1 == mega_token and t2 <= type_mask:               # mega, normal
                 token_board[(token_board == token_type)] = 0
             case (t1, t2) if t1 > special_type_mask and t2 > special_type_mask:  # bomb, bomb

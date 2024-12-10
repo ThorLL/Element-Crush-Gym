@@ -25,10 +25,14 @@ class State(ABC):
     def reward(self) -> float:
         raise NotImplementedError
 
+    @abstractmethod
+    def clone(self):
+        raise NotImplementedError
+
 
 class BaseNode(ABC):
     def __init__(self, state: State, parent: Optional['BaseNode'] = None):
-        self.state: State = state
+        self.state: State = state.clone()
         self.parent: BaseNode = parent
         self.children: dict[Any, BaseNode] = {}
         self.visits = 0
