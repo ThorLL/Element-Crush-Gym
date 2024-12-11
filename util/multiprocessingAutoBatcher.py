@@ -56,5 +56,5 @@ def async_pbar_auto_batcher(func, data_size):
     return async_pbar(batcher, batch_data(data_size, func), data_size)
 
 
-def batched_async_pbar(func, data_size):
-    return async_pbar(func, batch_data(data_size, update_pbar), data_size)
+def batched_async_pbar(func, data_size, data=None):
+    return async_pbar(func, batch_data(data_size, (update_pbar, data)), data_size)
