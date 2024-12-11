@@ -31,15 +31,3 @@ def build_table(title, columns, rows, min_col_width=8, spacing=1):
         table += f'\n{seperator if r != len(rows) -1 else bottom}\n'
 
     return table
-
-
-if __name__ == '__main__':
-    print(build_table(
-        'test Table',
-        ['name', 'col 1', 'col 2', 'col 3'],
-        [
-                ['row 1',    'value 1', 'vaaaaalue 1', ''],
-                ['2',         100000, 'vaaaaalue 1', 0.00],
-                ['roooow 3', None, '', None],
-        ]
-    ))

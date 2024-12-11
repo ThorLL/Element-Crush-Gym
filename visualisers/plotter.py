@@ -1,11 +1,10 @@
 import math
-import random
-from typing import Any
 
 import numpy as np
 from matplotlib import pyplot as plt
+from matplotlib.figure import Figure
 
-from util.table import build_table
+from visualisers.table import build_table
 
 
 def plot_distribution(data):
@@ -114,7 +113,8 @@ class Plot:
 class LivePlotter:
     def __init__(self):
         self.plots: dict[str, Plot] = {}
-        self.fig, self.axes = None, []
+        self.fig: Figure | None = None
+        self.axes = []
 
     def add_view(self, x_axis_label, y_axis_label, title=None):
         plot = Plot(x_axis_label, y_axis_label, title)
@@ -173,11 +173,5 @@ class LivePlotter:
         plt.ioff()
         plt.show()
 
-
-if __name__ == '__main__':
-    plot_distribution({
-        'Random actions': random.sample(range(1, 50), 7),
-        'Naive actions': random.sample(range(1, 50), 7),
-        'Best actions': random.sample(range(1, 50), 7),
-        'MCTS actions': random.sample(range(1, 50), 7),
-    })
+    def save(self, name):
+        self.fig.savefig(f'plots/{name}.png')
