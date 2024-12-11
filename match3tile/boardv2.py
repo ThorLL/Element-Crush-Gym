@@ -5,7 +5,7 @@ import numpy as np
 
 from match3tile import metadata
 from mctslib.abc.mcts import State
-from util.quick_math import lower_clamp, upper_clamp
+from util.quickMath import lower_clamp, upper_clamp
 
 
 def get_match_shape(match):
