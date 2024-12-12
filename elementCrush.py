@@ -203,7 +203,7 @@ class ElementCrush(nnx.Module):
             _, shape, model = tuple(file_name.split('elementCrush')[-1].split('/'))
 
             h, w, t = tuple(shape.split('x'))
-            cfg = BoardConfig(rows=h, columns=w, types=t)
+            cfg = BoardConfig(rows=int(h), columns=int(w), types=int(t))
             layers, feats = tuple(model.split('_'))
             model = nnx.eval_shape(lambda: ElementCrush(cfg, int(layers), int(feats)))
             state = nnx.state(model)
