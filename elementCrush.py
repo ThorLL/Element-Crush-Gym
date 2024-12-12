@@ -12,7 +12,7 @@ import orbax.checkpoint as ocp
 
 
 import elementGOModules as elmGO
-from match3tile import metadata
+from match3tile.boardConfig import BoardConfig
 from util.prompter import ask_for, chose
 from visualisers.plotter import LivePlotter
 
@@ -50,6 +50,7 @@ def l2_regularization(model, alpha=1e-4):
 
 class ElementCrush(nnx.Module):
     def __init__(self,
+                 cfg: BoardConfig,
                  residual_layer=40,
                  features=256,
                  optimizer=sgd(1e-5, 0.9, nesterov=False),
@@ -58,9 +59,9 @@ class ElementCrush(nnx.Module):
         super().__init__()
         rng = rng or nnx.Rngs(0)
 
-        height, width, action_space = metadata.rows, metadata.columns, metadata.action_space
-
-        types = metadata.types
+        height, width = cfg.rows, cfg.columns
+        action_space = cfg.action_space
+        types = cfg.types
 
         self.channels = 2 ** (int(math.ceil(math.log2(types))) + 2)
 
@@ -161,10 +162,12 @@ class ElementCrush(nnx.Module):
                                 plotter.add_value_for(f'test_{metric}', value)
                         self.metrics.reset()
 
-                        if plot: plotter.update()
+                        if plot:
+                            plotter.update()
 
-        if plot: plotter.show()
-        if plot: plotter.save(self.to_string())
+        if plot:
+            plotter.show()
+            plotter.save(self.to_string())
 
     def save(self, suffix=None, force: bool = False):
         suffix = '_' + suffix if suffix else ''
@@ -180,34 +183,39 @@ class ElementCrush(nnx.Module):
 
     @staticmethod
     def load(file_name=None) -> 'ElementCrush':
-        if file_name is None:
-            models_folder = f'{CKPT_PATH}/elementCrush/'
-            model_groups = os.listdir(models_folder)
-            model_groups = [model_group for model_group in model_groups if os.path.isdir(models_folder+model_group)]
-            if len(model_groups) > 1:
-                model_group = chose('Chose shape', model_groups)
-            else:
-                model_group = model_groups[0]
+        try:
+            if file_name is None:
+                models_folder = f'{CKPT_PATH}/elementCrush/'
+                model_groups = os.listdir(models_folder)
+                model_groups = [model_group for model_group in model_groups if os.path.isdir(models_folder+model_group)]
+                if len(model_groups) > 1:
+                    model_group = chose('Chose shape', model_groups)
+                elif len(model_groups) == 1:
+                    model_group = model_groups[0]
+                else:
+                    raise FileNotFoundError('No models found to load')
+                model_group = models_folder+model_group
+                models = [model for model in os.listdir(model_group) if os.path.isdir(model_group)]
+                file_name = model_group + '/' + chose('Chose model', models)
 
-            model_group = models_folder+model_group
-            models = [model for model in os.listdir(model_group) if os.path.isdir(model_group)]
-            file_name = model_group + '/' + chose('Chose model', models)
+            # extract abstract model from file
+            _, shape, model = tuple(file_name.split('elementCrush')[-1].split('/'))
 
-        # extract abstract model from file
-        _, shape, model = tuple(file_name.split('elementCrush')[-1].split('/'))
+            h, w, t = tuple(shape.split('x'))
+            cfg = BoardConfig(rows=h, columns=w, types=t)
+            layers, feats = tuple(model.split('_'))
+            model = nnx.eval_shape(lambda: ElementCrush(cfg, int(layers), int(feats)))
+            state = nnx.state(model)
 
-        h, w, t = tuple(shape.split('x'))
-        metadata.set_shape(int(h), int(w))
-        metadata.set_types(int(t))
+            state = checkpointer.restore(file_name, state)
 
-        layers, feats = tuple(model.split('_'))
-        model = nnx.eval_shape(lambda: ElementCrush(int(layers), int(feats)))
-        state = nnx.state(model)
-
-        state = checkpointer.restore(file_name, state)
-
-        nnx.update(model, state)
-        return model
+            nnx.update(model, state)
+            return model
+        except Exception as e:
+            print('Failed to load model:', e)
+            print('Make sure any exists')
+            print('Here is a default model')
+            return ElementCrush(BoardConfig())
 
     def __eq__(self, other: Optional['ElementCrush']) -> bool:
         if other is None:

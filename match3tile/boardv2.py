@@ -1,241 +1,59 @@
-import random
-from typing import List, Any
+from typing import List
 
 import numpy as np
 
-from match3tile import metadata
+from match3tile.boardConfig import BoardConfig
+from match3tile.boardFunctions import legal_actions, swap, get_matches, get_match_spawn_mask, shuffle
 from mctslib.abc.mcts import State
 from util.quickMath import lower_clamp, upper_clamp
 
 
-def get_match_shape(match):
-    h_line = all(match[0][0] == token[0] for token in match)
-    v_line = all(match[0][1] == token[1] for token in match)
-    return metadata.special_type_mask if not h_line and not v_line else 2 * (metadata.type_mask + 1) if h_line else metadata.type_mask + 1
-
-
-def get_center(match):
-    shape = get_match_shape(match)
-    if shape != metadata.special_type_mask:
-        return match[int(len(match) / 2)]
-    else:
-        for a in match:
-            v_line = [a]
-            h_line = [a]
-            a_row, a_col = a
-            for b in match:
-                b_row, b_col = b
-                if a == b:
-                    continue
-
-                if a_row == b_row:
-                    h_line.append(b)
-                if a_col == b_col:
-                    v_line.append(b)
-
-            if len(v_line) > 2 and len(h_line) > 2:
-                return a
-
-
 class BoardV2(State):
-    def __init__(self, n_actions, array=None, seed=None):
-        self.seed = seed or random.randint(0, 2 ** 31 - 1)
+    def __init__(self, n_actions: int, cfg=BoardConfig(), array=None):
+        self.cfg = cfg
         self.n_actions = n_actions
 
         self._reward = 0
         if array is not None:
             self.array = array
         else:
-            np.random.seed(self.seed)
-            self.array = np.random.randint(low=1, high=metadata.types + 1, size=(metadata.rows, metadata.columns))
+            np.random.seed(cfg.seed)
+            self.array = np.random.randint(low=1, high=cfg.types + 1, size=(cfg.rows, cfg.columns))
 
-            mask, matches = BoardV2.get_matches(self.array)
+            mask, matches = get_matches(self.array)
             while len(matches) > 0:
-                new_rands = np.random.randint(low=1, high=metadata.types + 1, size=(metadata.rows, metadata.columns))
+                new_rands = np.random.randint(low=1, high=cfg.types + 1, size=(cfg.rows, cfg.columns))
                 self.array[mask] = new_rands[mask]
-                mask, matches = BoardV2.get_matches(self.array)
+                mask, matches = get_matches(self.array)
 
         self._actions = []
 
+    @property
+    def legal_actions(self) -> List[int]:
+        if len(self._actions) == 0:
+            self._actions = legal_actions(self.cfg, self.array)
+        return self._actions
+
     def clone(self):
-        my_clone = BoardV2(self.n_actions, np.copy(self.array), self.seed)
+        my_clone = BoardV2(self.n_actions, self.cfg, np.copy(self.array))
         my_clone._reward = self._reward
         my_clone._actions = self._actions
         return my_clone
 
-    @property
-    def action_space(self):
-        return metadata.action_space
-
-    @property
-    def legal_actions(self) -> List[Any]:
-        if len(self._actions) > 0:
-            return self._actions
-        height, width = metadata.rows, metadata.columns
-
-        def horizontal_check(left_token, right_token, left, right, arr):
-            """
-            Action is to swap X and Y, only have to cells x and y
-            ::
-                0 0 0 0 0 0  ->  0 0 0 0 0 0
-                0 0 0 0 0 0  ->  0 0 y x 0 0
-                0 0 0 0 0 0  ->  0 0 y x 0 0
-                0 0 X-Y 0 0  ->  y y Y-X x x
-                0 0 0 0 0 0  ->  0 0 y x 0 0
-                0 0 0 0 0 0  ->  0 0 y x 0 0
-            """
-            (l_r, l_c), (r_r, r_c) = left, right
-            if l_c - 2 >= 0 and arr[l_r, l_c - 2] == arr[l_r, l_c - 1] == left_token:
-                return True
-
-            if r_c + 2 < width and arr[r_r, r_c + 1] == arr[r_r, r_c + 2] == right_token:
-                return True
-
-            def check_above_and_below(r, c, token):
-                above_is_same = r - 1 >= 0 and arr[r - 1, c] == token
-                below_is_same = r + 1 < metadata.rows and arr[r + 1, c] == token
-
-                if not (above_is_same or below_is_same):
-                    return False
-                if above_is_same and below_is_same:
-                    return True
-                if above_is_same and not below_is_same:
-                    return r - 2 >= 0 and arr[r - 2, c] == token
-                if not above_is_same and below_is_same:
-                    return r + 2 < metadata.rows and arr[r + 2, c] == token
-
-            return check_above_and_below(l_r, l_c, left_token) or check_above_and_below(r_r, r_c, right_token)
-
-        def vertical_check(above_token, below_token, above, below, arr):
-            """
-            Same idea as for horizontal_check()
-            ::
-                0 0  0  0 0 0  ->  0 0  x  0 0 0
-                0 0  0  0 0 0  ->  0 0  x  0 0 0
-                0 0 ┌Y┐ 0 0 0  ->  x x ┌X┐ x x 0
-                0 0 └X┘ 0 0 0  ->  y y └Y┘ y y 0
-                0 0  0  0 0 0  ->  0 0  y  0 0 0
-                0 0  0  0 0 0  ->  0 0  y  0 0 0
-            """
-            (b_r, b_c), (a_r, a_c) = below, above
-            if b_r + 2 < height and arr[b_r + 1, b_c] == arr[b_r + 2, b_c] == below_token:
-                return True
-
-            if a_r - 2 >= 0 and arr[a_r - 2, a_c] == arr[a_r -1, a_c] == above_token:
-                return True
-
-            def check_left_and_right(r, c, token):
-                left_is_same = c - 1 >= 0 and arr[r, c - 1] == token
-                right_is_same = c + 1 < width and arr[r, c + 1] == token
-
-                if not (left_is_same or right_is_same):
-                    return False
-                if left_is_same and right_is_same:
-                    return True
-                if left_is_same and not right_is_same:
-                    return c - 2 >= 0 and arr[r, c - 2] == token
-                if not left_is_same and right_is_same:
-                    return c + 2 < width and arr[r, c + 2] == token
-
-            return check_left_and_right(b_r, b_c, below_token) or check_left_and_right(a_r, a_c, above_token)
-
-        token_board = self.array & metadata.type_mask
-        for action, (cell1, cell2) in metadata.actions.items():
-            token1, token2 = token_board[cell1], token_board[cell2]
-            if token1 == 0 or token2 == 0 or (self.array[cell1] > metadata.type_mask and self.array[cell2] > metadata.type_mask):  # check special tokens
-                self._actions.append(action)
-                continue
-            if token1 == token2:  # ignore same typed tokens
-                continue
-            is_vertical = cell1[1] == cell2[1]  # if columns are equal it is a vertical action
-            if is_vertical:
-                if vertical_check(token2, token1, cell1, cell2, token_board):
-                    self._actions.append(action)
-            else:
-                if horizontal_check(token2, token1, cell1, cell2, token_board):
-                    self._actions.append(action)
-        if len(self._actions) > 0:
-            return self._actions
-        np.random.seed(self.seed)
-        special_mask = (self.array > metadata.type_mask)
-        special_tokens = np.zeros(self.array.shape)
-        special_tokens[special_mask] = self.array[special_mask]
-
-        np.random.shuffle(self.array)
-        self.array[special_mask] = special_tokens[special_mask]
-        return self.legal_actions
-
-    @staticmethod
-    def swap(array, source, target) -> np.ndarray:
-        source_value = array[source]
-        array[source] = array[target]
-        array[target] = source_value
-        return array
-
-    @staticmethod
-    def get_matches(array):
-        rows, cols = array.shape
-        mask = np.zeros_like(array, dtype=bool)
-        matches = []
-
-        def add_to_matches(match):
-            for idx in range(len(matches)):
-                if any([item in matches[idx] for item in match]):
-                    matches[idx].extend([item for item in match if item not in matches])
-                    return
-            matches.append(match)
-
-        for row in range(rows):
-            for col in range(cols):
-                value = array[row, col]
-                if value == 0 or any([(row, col) in match for match in matches]):
-                    continue
-                match_indices = []
-                # Check horizontal match
-                if col <= cols - 3 and array[row, col] == array[row, col + 1] == array[row, col + 2]:
-                    k = col
-                    while k < cols and array[row, k] == value:
-                        match_indices.append((row, k))
-                        mask[row, k] = True
-                        k += 1
-
-                # Check vertical match
-                if row <= rows - 3 and array[row, col] == array[row + 1, col] == array[row + 2, col]:
-                    k = row
-                    while k < rows and array[k, col] == value:
-                        match_indices.append((k, col))
-                        mask[k, col] = True
-                        k += 1
-                if len(match_indices) > 2:
-                    add_to_matches(match_indices)
-        return mask, matches
-
-    @staticmethod
-    def get_match_spawn_mask(matches, array):
-        mask = np.zeros((metadata.rows, metadata.columns))
-        for match in [match for match in matches if len(match) > 3]:
-            shape = get_match_shape(match)
-            if shape == metadata.special_type_mask:
-                mask[get_center(match)] = array[match[0]] + shape
-            elif len(match) >= 5:
-                mask[get_center(match)] = metadata.mega_token
-            else:
-                mask[get_center(match)] = array[match[0]] + shape
-        return mask
-
     def apply_action(self, action) -> 'BoardV2':
         if self.is_terminal:
             return self
-        np.random.seed(self.seed)
+        np.random.seed(self.cfg.seed)
         reward = 0
-        source, target = metadata.actions[action]
+        source, target = self.cfg.actions[action]
 
-        board = np.copy(self.array)
-        board = BoardV2.swap(board, source, target)
+        # create next board by swapping the tokens
+        next_state = swap(self.array, source, target)
 
-        token1, token2 = board[source], board[target]
-        type_mask, special_type_mask, mega_token = metadata.type_mask, metadata.special_type_mask, metadata.mega_token
-        height, width, types = metadata.rows, metadata.columns, metadata.types
+        # extract config variables
+        type_mask, special_type_mask = self.cfg.type_mask, self.cfg.special_type_mask
+        h_line, v_line, bomb, mega_token = self.cfg.h_line, self.cfg.v_line, self.cfg.bomb, self.cfg.mega_token
+        height, width, types = self.cfg.rows, self.cfg.columns, self.cfg.types
 
         def point_board_vec(x):
             if x <= type_mask:         # normal token
@@ -246,84 +64,144 @@ class BoardV2(State):
                 return 25
             return 50                   # has to be bomb
 
-        points_board = np.vectorize(point_board_vec)(board)
-        special_tokens = np.where(board > type_mask, board, 0)
-        token_board = board & type_mask
-        token_spawn = np.zeros(board.shape)
+        # create sub boards
+        points_board = np.vectorize(point_board_vec)(next_state)
+        special_tokens = np.where(next_state > type_mask, next_state, 0)
+        token_board = next_state & type_mask
+        token_spawn = np.zeros(next_state.shape)
 
-        if token2 > token1:  # make sure larger token is first
-            token1, token2 = token2, token1
-        token_type = token2 & type_mask
-        match (token1, token2):
-            case (t1, t2) if t1 <= type_mask and t2 <= type_mask:                # normal, normal
-                zeros_mask, matches = BoardV2.get_matches(token_board)
-                token_board[zeros_mask] = 0
-                token_spawn = BoardV2.get_match_spawn_mask(matches, board)
-            case (t1, t2) if t1 == mega_token and t2 == mega_token:              # mega, mega
-                token_board.fill(0)
-            case (t1, t2) if t1 == mega_token and t2 > special_type_mask:        # mega, bomb
-                mask = (token_board == token_type)
-                token_board[mask] = 0
-                special_tokens[mask] = token_type + special_type_mask
-            case (t1, t2) if t1 == mega_token and t2 > type_mask:                # mega, line
-                v_line, h_line = token_type + 2 * (type_mask+1), token_type + type_mask + 1
-                mask = (token_board == token_type)
-                token_board[mask] = 0
-                for n, (i, j)  in enumerate(np.argwhere(mask)):
-                    if special_tokens[i, j] == 0:
-                        special_tokens[i, j] = v_line if n % 2 == 0 else h_line
-            case (t1, t2) if t1 == mega_token and t2 <= type_mask:               # mega, normal
-                token_board[(token_board == token_type)] = 0
-            case (t1, t2) if t1 > special_type_mask and t2 > special_type_mask:  # bomb, bomb
-                token_board[
-                    lower_clamp(target[0]-2): upper_clamp(target[0]+2, height),
-                    lower_clamp(target[1]-2): upper_clamp(target[1]+2, width)
-                ] = 0
-            case (t1, t2) if t1 > special_type_mask and t2 > type_mask:          # bomb, line
-                token_board[0: height, lower_clamp(target[1]-2): upper_clamp(target[1]+2, width)] = 0
-                token_board[lower_clamp(target[0]-2): upper_clamp(target[0]+2, height), 0: width] = 0
-            case (t1, t2) if t1 > type_mask and t2 > type_mask:                  # line, line
-                token_board[:target[1]] = 0
-                token_board[target[0]:] = 0
+        token1, token2 = token_board[source], token_board[target]
+        token1_type, token2_type = special_tokens[source], special_tokens[target]
+
+        def are(type1, type2):
+            return (token1_type == type1 and token2_type == type2) or (token2_type == type1 and token1_type == type2)
+
+        # standard
+        if are(0, 0):
+            zeros_mask, matches = get_matches(token_board)
+            token_board[zeros_mask] = 0
+            token_spawn = get_match_spawn_mask(self.cfg, matches)
+        # removes all tokens
+        elif are(mega_token, mega_token):
+            token_board[...] = 0
+        # mega token + bomb (type: t) converts all non-special tokens of type t to bombs
+        elif are(mega_token, bomb):
+            token = np.max(token1, token2)  # one is 0 (mega token) other is the matched token
+            mask = (token_board == token and special_tokens == 0)  # mask of tokens with same type but not special
+            token_board[mask] = 0
+            special_tokens[mask] = token + bomb
+        # mega token + (v/h)_line (type: t) converts all non-special tokens of type t to alternating v and h lines
+        elif are(mega_token, h_line) or are(mega_token, v_line):
+            token = np.max(token1, token2)  # one is 0 (mega token) other is the matched token
+            mask = (token_board == token and special_tokens == 0)  # mask of tokens with same type but not special
+            token_board[mask] = 0
+            for n, (i, j) in enumerate(np.argwhere(mask)):
+                if special_tokens[i, j] == 0:
+                    special_tokens[i, j] = v_line if n % 2 == 0 else h_line
+        # mega token + normal token (type: t) removes all tokens of type t
+        elif are(mega_token, 0):
+            token = np.max(token1, token2)  # one is 0 (mega token) other is the matched token
+            token_board[(token_board == token)] = 0
+        # bomb + bomb
+        # . . . . . . .
+        # . ┌-------┐ .
+        # . |       | .
+        # . |  5x5  | .
+        # . |       | .
+        # . └-------┘ .
+        # . . . . . . .
+        elif are(bomb, bomb):
+            token_board[
+                lower_clamp(target[0]-2): upper_clamp(target[0]+2, height),
+                lower_clamp(target[1]-2): upper_clamp(target[1]+2, width)
+            ] = 0
+        # bomb + (h_line or v_line):
+        # . ┌---┐ .    plus shape clear with 3 x width and 3 x height
+        # ┌-┘   └-┐
+        # |       |
+        # └-┐   ┌-┘
+        # . └---┘ .
+        elif are(bomb, h_line) or are(bomb, v_line):
+            token_board[0: height, lower_clamp(target[1]-2): upper_clamp(target[1]+2, width)] = 0
+            token_board[lower_clamp(target[0]-2): upper_clamp(target[0]+2, height), 0: width] = 0
+        # two lines h or v
+        # . | .    plus shape clear with 1 x width and 1 x height
+        # --┼--
+        # . | .
+        elif are(h_line, v_line) or are(v_line, h_line):
+            token_board[:target[1]] = 0
+            token_board[target[0]:] = 0
+        else:
+            raise ValueError('Unknown case')
+
         while True:
+            # trigger the effect of each special token that has been removed
+            # a token is counted as removed if the token_board sub boards corresponding value is 0
             special_tokens = np.where((token_board == 0), special_tokens, 0)
             for i, j in np.argwhere(special_tokens != 0):
+                # extract special token
                 special_type = special_tokens[i, j] & special_type_mask
+                # trigger effect
                 match special_type:
-                    case t if t == type_mask + 1:
+                    case t if t == h_line:
                         token_board[i, :] = 0
-                    case t if t == 2 * (type_mask + 1):
+                    case t if t == v_line:
                         token_board[:, j] = 0
-                    case t if t == special_type_mask:
+                    case t if t == bomb:
                         start_row, end_row = i - 1, i + 1
                         start_col, end_col = j - 1, j + 1
                         token_board[start_col:end_col, start_row:end_row] = 0
+
+            # extract points
             points_board = points_board[(token_board == 0)]
             reward += np.sum(points_board)
 
-            board[(token_board == 0)] = 0
-            board[(token_spawn != 0)] = token_spawn[(token_spawn != 0)]
+            # merge merge sub boards
+            next_state[(token_board == 0)] = 0
+            next_state[(token_spawn != 0)] = token_spawn[(token_spawn != 0)]
 
+            # simulate gravity
             for col in range(width):
-                column = board[:, col]
+                column = next_state[:, col]
                 tokens = column[column > 0]
                 if tokens.size == height:
                     continue
+                # fill with new random values
                 new_tokens = np.random.randint(1, types + 1, size=height - tokens.size)
-                board[:, col] = np.concatenate((new_tokens, tokens))
+                next_state[:, col] = np.concatenate((new_tokens, tokens))
 
-            points_board = np.vectorize(point_board_vec)(board)
-            special_tokens = np.where(board > type_mask, board, 0)
-            token_board = board & type_mask
+            # create new sub boards
+            points_board = np.vectorize(point_board_vec)(next_state)
+            special_tokens = np.where(next_state > type_mask, next_state, 0)
+            token_board = next_state & type_mask
 
-            zeros_mask, matches = BoardV2.get_matches(token_board)
+            # check for new matches
+            zeros_mask, matches = get_matches(token_board)
+
+            # moves | matches | should shuffle
+            #  = 0  |   = 0   |     yes
+            #  > 0  |   = 0   |      no
+            #  > 0  |   > 0   |      no
+            #  = 0  |   > 0   |      no
+            while len(matches) == 0 and len(legal_actions(self.cfg, next_state)) == 0:
+                shuffle(self.cfg, next_state)
+                # create sub boards
+                points_board = np.vectorize(point_board_vec)(next_state)
+                special_tokens = np.where(next_state > type_mask, next_state, 0)
+                token_board = next_state & type_mask
+                zeros_mask, matches = get_matches(token_board)
             if len(matches) == 0:
                 break
-            token_board[zeros_mask] = 0
-            token_spawn = BoardV2.get_match_spawn_mask(matches, board)
 
-        board = BoardV2(self.n_actions-1, board, seed=self.seed)
-        board._reward = self._reward + reward
+            # remove matches
+            token_board[zeros_mask] = 0
+
+            # get newly spawned token
+            token_spawn = get_match_spawn_mask(self.cfg, matches)
+
+        # creates the next board state object from the
+        board = BoardV2(self.n_actions - 1, self.cfg, np.copy(next_state))
+        board._reward = self._reward + reward  # add reward
         return board
 
     @property
