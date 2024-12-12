@@ -130,7 +130,7 @@ class ElementCrush(nnx.Module):
         self.optimizer.update(grads)
         self.update_metrics(aux_data, values, policies)
 
-    def train(self, train_ds, test_ds, epochs, eval_every, plot=True):
+    def train(self, train_ds, test_ds, epochs, eval_every, plot=True, show=False):
         print('starting training')
 
         if plot:
@@ -166,8 +166,9 @@ class ElementCrush(nnx.Module):
                             plotter.update()
 
         if plot:
-            plotter.show()
-            plotter.save(self.to_string())
+            if show:
+                plotter.show()
+            plotter.save(self.to_string().replace('/','_'))
 
     def save(self, suffix=None, force: bool = False):
         suffix = '_' + suffix if suffix else ''
