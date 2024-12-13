@@ -118,7 +118,7 @@ class ElementCrush(nnx.Module):
         )
 
     @nnx.jit
-    def eval(self, observation, values, policies):
+    def eval_step(self, observation, values, policies):
         """Evaluate the model on the batch and update metrics."""
         _, aux_data = self.loss(self, observation, values, policies)
         self.update_metrics(aux_data, values, policies)
@@ -154,8 +154,8 @@ class ElementCrush(nnx.Module):
                                 plotter.add_value_for(f'train_{metric}', value)
 
                         self.metrics.reset()
-                        for test_batch in test_ds:
-                            self.eval(test_batch['observations'], test_batch['values'], test_batch['policies'])
+                        for test_batch in tqdm(test_ds):
+                            self.eval_step(test_batch['observations'], test_batch['values'], test_batch['policies'])
 
                         if plot:
                             for metric, value in self.metrics.compute().items():

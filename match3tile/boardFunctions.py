@@ -16,14 +16,14 @@ def get_center(match: list[tuple[int, int]]) -> tuple[int, int]:
 def shuffle(cfg: BoardConfig, array: np.ndarray):
     np.random.seed(cfg.seed)
     special_mask = (array > cfg.type_mask)
-    special_tokens = np.zeros(array.shape)
+    special_tokens = np.zeros(array.shape, dtype=np.int32)
     special_tokens[special_mask] = array[special_mask]
 
     np.random.shuffle(array)
     array[special_mask] = special_tokens[special_mask]
 
 
-def legal_actions(cfg: BoardConfig, array: np.ndarray) -> List[int]:
+def legal_actions(cfg: BoardConfig, array: np.array) -> List[int]:
     height, width = cfg.shape
     actions = []
 
@@ -114,7 +114,7 @@ def legal_actions(cfg: BoardConfig, array: np.ndarray) -> List[int]:
 
 def swap(array: np.ndarray, source: tuple[int, int], target: tuple[int, int]) -> np.ndarray:
     new_arr = np.copy(array)
-    new_arr[source], new_arr[target] = 0, 0
+    new_arr[source], new_arr[target] = array[target], array[source]
     return new_arr
 
 
@@ -156,8 +156,8 @@ def get_matches(array: np.ndarray) -> tuple[np.ndarray, list[tuple[tuple[int, in
     return mask, matches
 
 
-def get_match_spawn_mask(cfg: BoardConfig, matches):
-    mask = np.zeros(cfg.shape)
+def get_match_spawn_mask(cfg: BoardConfig, matches) -> np.array:
+    mask = np.zeros(cfg.shape, dtype=np.int32)
     for match in [match for match in matches if len(match) > 3]:
         center = get_center(match)
         if all(match[0][0] == token[0] for token in match):                  # all rows are equal

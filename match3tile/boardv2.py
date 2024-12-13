@@ -9,7 +9,7 @@ from util.quickMath import lower_clamp, upper_clamp
 
 
 class BoardV2(State):
-    def __init__(self, n_actions: int, cfg=BoardConfig(), array=None):
+    def __init__(self, n_actions: int, cfg=BoardConfig(), array: np.array = None):
         self.cfg = cfg
         self.n_actions = n_actions
 
@@ -34,7 +34,7 @@ class BoardV2(State):
             self._actions = legal_actions(self.cfg, self.array)
         return self._actions
 
-    def clone(self):
+    def clone(self) -> 'BoardV2':
         my_clone = BoardV2(self.n_actions, self.cfg, np.copy(self.array))
         my_clone._reward = self._reward
         my_clone._actions = self._actions
@@ -68,39 +68,38 @@ class BoardV2(State):
         points_board = np.vectorize(point_board_vec)(next_state)
         special_tokens = np.where(next_state > type_mask, next_state, 0)
         token_board = next_state & type_mask
-        token_spawn = np.zeros(next_state.shape)
+        token_spawn = np.zeros(next_state.shape, dtype=np.int32)
 
-        token1, token2 = token_board[source], token_board[target]
+        token1, token2 = self.array[source], self.array[target]
         token1_type, token2_type = special_tokens[source], special_tokens[target]
 
         def are(type1, type2):
             return (token1_type == type1 and token2_type == type2) or (token2_type == type1 and token1_type == type2)
 
-        # standard
-        if are(0, 0):
-            zeros_mask, matches = get_matches(token_board)
-            token_board[zeros_mask] = 0
-            token_spawn = get_match_spawn_mask(self.cfg, matches)
+
         # removes all tokens
-        elif are(mega_token, mega_token):
+        if are(mega_token, mega_token):
             token_board[...] = 0
         # mega token + bomb (type: t) converts all non-special tokens of type t to bombs
         elif are(mega_token, bomb):
-            token = np.max(token1, token2)  # one is 0 (mega token) other is the matched token
-            mask = (token_board == token and special_tokens == 0)  # mask of tokens with same type but not special
-            token_board[mask] = 0
+            token = max(token1, token2)  # one is 0 (mega token) other is the matched token
+            token_mask = (token_board == token)
+            special_mask = (special_tokens == 0)
+            mask = token_mask & special_mask
             special_tokens[mask] = token + bomb
         # mega token + (v/h)_line (type: t) converts all non-special tokens of type t to alternating v and h lines
         elif are(mega_token, h_line) or are(mega_token, v_line):
-            token = np.max(token1, token2)  # one is 0 (mega token) other is the matched token
-            mask = (token_board == token and special_tokens == 0)  # mask of tokens with same type but not special
+            token = max(token1, token2)  # one is 0 (mega token) other is the matched token
+            token_mask = (token_board == token)
+            special_mask = (special_tokens == 0)
+            mask = token_mask & special_mask  # mask of tokens with same type but not special
             token_board[mask] = 0
             for n, (i, j) in enumerate(np.argwhere(mask)):
                 if special_tokens[i, j] == 0:
                     special_tokens[i, j] = v_line if n % 2 == 0 else h_line
         # mega token + normal token (type: t) removes all tokens of type t
         elif are(mega_token, 0):
-            token = np.max(token1, token2)  # one is 0 (mega token) other is the matched token
+            token = max(token1, token2)  # one is 0 (mega token) other is the matched token
             token_board[(token_board == token)] = 0
         # bomb + bomb
         # . . . . . . .
@@ -132,7 +131,9 @@ class BoardV2(State):
             token_board[:target[1]] = 0
             token_board[target[0]:] = 0
         else:
-            raise ValueError('Unknown case')
+            zeros_mask, matches = get_matches(token_board)
+            token_board[zeros_mask] = 0
+            token_spawn = get_match_spawn_mask(self.cfg, matches)
 
         while True:
             # trigger the effect of each special token that has been removed
@@ -158,7 +159,8 @@ class BoardV2(State):
 
             # merge merge sub boards
             next_state[(token_board == 0)] = 0
-            next_state[(token_spawn != 0)] = token_spawn[(token_spawn != 0)]
+            next_state[(token_spawn != 0)] += token_spawn[(token_spawn != 0)]
+            next_state = np.clip(next_state, 0, 32)
 
             # simulate gravity
             for col in range(width):
@@ -205,24 +207,13 @@ class BoardV2(State):
         return board
 
     @property
-    def naive_action(self):
+    def greedy_action(self) -> int:
         best_action = None
-        best_reward = -1
+        hightest_reward = -1
         for action in self.legal_actions:
             next_state = self.apply_action(action)
-            if next_state.reward > best_reward:
-                best_reward = next_state.reward
-                best_action = action
-        return best_action
-
-    @property
-    def best_action(self) -> int:
-        best_action = None
-        best_reward = -1
-        for action in self.legal_actions:
-            next_state = self.apply_action(action)
-            if next_state.reward > best_reward:
-                best_reward = next_state.reward
+            if next_state.reward > hightest_reward:
+                hightest_reward = next_state.reward
                 best_action = action
         return best_action
 

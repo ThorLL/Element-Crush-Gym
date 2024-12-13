@@ -14,11 +14,11 @@ def random_task():
     return state.reward
 
 
-def best_task():
+def greedy_test():
     state = BoardV2(20, BoardConfig())
     np.random.seed(state.cfg.seed)
     while not state.is_terminal:
-        state = state.apply_action(state.best_action)
+        state = state.apply_action(state.greedy_action)
     return state.reward
 
 

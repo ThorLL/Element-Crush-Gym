@@ -14,7 +14,7 @@ from util.multiprocessingAutoBatcher import batched_async_pbar
 
 
 def mcts_task(data):
-    (callback, cfg, moves), batch_size = data
+    (callback, (cfg, moves)), batch_size = data
     data = {
         'observations': [],
         'policies': [],
@@ -29,7 +29,7 @@ def mcts_task(data):
         mcts = MCTS(state, 3, 256, False, False)
         while not state.is_terminal:
             action, _, policy_logits = mcts()
-            policies = np.zeros_like(state.array)
+            policies = np.zeros((state.cfg.action_space))
             for a, p in zip(state.legal_actions, policy_logits):
                 policies[a] = p
 
@@ -198,7 +198,7 @@ class Dataset:
         # Ensure all data arrays are the same length
         obs = np.array(data['observations'])
         pol = np.array(data['policies'])
-        val = np.array(data['values'])
+        val = np.array(data['values']) / np.max(self.dataset['values'])
 
         if not (len(obs) == len(pol) == len(val)):
             raise ValueError("All input data arrays must have the same length.")

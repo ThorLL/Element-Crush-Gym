@@ -1,8 +1,8 @@
 import argparse
-import os
 import sys
 import time
 from contextlib import redirect_stdout
+from os import environ
 
 from optax import sgd
 from tqdm import tqdm
@@ -14,7 +14,7 @@ from match3tile.boardv2 import BoardV2
 from match3tile.draw_board import BoardAnimator
 from mctslib.standard.mcts import MCTS
 from dataset import Dataset
-from samplerTasks import random_task, best_task, mcts_task, nn_mcts_task
+from samplerTasks import random_task, greedy_test, mcts_task, nn_mcts_task
 from util.multiprocessingAutoBatcher import async_pbar_auto_batcher
 from util.profiler import perform_profiling
 from visualisers.plotter import plot_distribution
@@ -135,10 +135,11 @@ def parse_args():
 
 
 if __name__ == "__main__":
+    environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
     args = parse_args()
 
     random_scores = []
-    best_score = []
+    greedy_score = []
     mcts_score = []
     nn_mcts_score = []
 
@@ -181,12 +182,9 @@ if __name__ == "__main__":
     nesterov = gui.Variable('nesterov', args.nesterov)
 
     dataset = gui.Variable('Dataset', Dataset(get_config(), moves.val))
-    dataset_caching = gui.Variable('Caching', args.dataset_size,)
-    dataset_size = gui.Variable(
-        'Size',
-        args.dataset_size,
-        callback=lambda: dataset.sample(dataset_size.val, dataset_caching.val)
-    )
+    build_board()
+    dataset_caching = gui.Variable('Caching', args.dataset_caching)
+    dataset_size = gui.Variable('Size', args.dataset_size)
     data_split = gui.Variable('Data_split', args.data_split, 'split')
     batch_size = gui.Variable(
         'Batch Size',
@@ -217,8 +215,9 @@ if __name__ == "__main__":
 
     def show_board():
         with redirect_stdout(sys.__stdout__):
-            anim = BoardAnimator(1, 1)
-            anim.draw(board.array)
+            anim = BoardAnimator(get_config(), 1, 1)
+            anim.draw(board.val.array)
+            print(board.val.array)
             input('Press enter to continue')
             del anim
 
@@ -227,11 +226,11 @@ if __name__ == "__main__":
             print('No model selected, create or load one')
             return
         try:
-            train, test = dataset.sample(dataset_size.val, dataset_caching.val).get_split(data_split.val)
-            model.train(train, test, epochs.val, eval_every.val)
+            train, test = dataset.val.sample(dataset_size.val, dataset_caching.val).get_split(data_split.val)
+            model.train(train, test, epochs.val, eval_every.val, show_training_plot)
             nn_mcts_score.clear()
         except Exception as e:
-            print(e)
+            raise e
 
     def load_model():
         with redirect_stdout(sys.__stdout__):
@@ -244,9 +243,9 @@ if __name__ == "__main__":
             missing = size - len(random_scores)
             random_scores.extend(async_pbar_auto_batcher(random_task, missing))
 
-        if len(best_score) < size:
-            missing = size - len(best_score)
-            best_score.extend(async_pbar_auto_batcher(best_task, missing))
+        if len(greedy_score) < size:
+            missing = size - len(greedy_score)
+            greedy_score.extend(async_pbar_auto_batcher(greedy_test, missing))
 
         if len(mcts_score) < size:
             missing = size - len(mcts_score)
@@ -258,7 +257,7 @@ if __name__ == "__main__":
 
         data = {
             'Random actions': random_scores[:size],
-            'Best actions': best_score[:size],
+            'Greedy actions': greedy_score[:size],
             'MCTS actions': mcts_score[:size],
         }
 
@@ -320,6 +319,7 @@ if __name__ == "__main__":
                     short_hand='ds',
                     info=gui.Info('The Dataset auto-refreshes when variables are changed'),
                     variables=gui.Variables(
+                        dataset_caching,
                         dataset_size,
                         data_split,
                         batch_size,
@@ -332,20 +332,20 @@ if __name__ == "__main__":
         )
 
         main_gui.start()
-    model.val = ElementCrush.load()
-    sample()
 
-    if args.train_em_all:
-        train, test = dataset.sample(dataset_size.val, dataset_caching.val).get_split(data_split.val)
-        model = ElementCrush(get_config(), 5, 64)
-        model.train(train, test, epochs.val, eval_every.val)
-        model.save()
-        model = ElementCrush(get_config(), 5, 128)
-        model.train(train, test, epochs.val, eval_every.val)
-        model.save()
-        model = ElementCrush(get_config(), 10, 64)
-        model.train(train, test, epochs.val, eval_every.val)
-        model.save()
+    # testing
+    #shape.set((7, 7, 6), force=True)
+    #dataset_size.set(10000, force=True)
+    model.set(ElementCrush(
+        get_config(),
+        residual_layer.val,
+        features.val,
+        sgd(learning_rate.val, momentum.val, nesterov=nesterov.val)
+    ), force=True)
+    mirrored.set(False, True)
+    type_switched.set(False, True)
+    eval_every.set(1, True)
+    train_model()
 
     if args.profile:
         print("-" * 50)
@@ -361,10 +361,10 @@ if __name__ == "__main__":
         perform_profiling(args.profile, args.sort, mcts)
         exit()
 
-    if args.mcts_single:
-        mcts_single(args.seed, args.moves, args.goal, args.sims, args.render, args.verbose)
-        exit()
+    #if args.mcts_single:
+    #    mcts_single(args.seed, args.moves, args.goal, args.sims, args.render, args.verbose)
+    #    exit()
 
-    if args.mcts_samples:
-        mcts_samples()
-        exit()
+    # if args.mcts_samples:
+    #     mcts_samples()
+    #     exit()
