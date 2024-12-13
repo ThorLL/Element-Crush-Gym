@@ -92,7 +92,7 @@ class BaseMCTS(ABC):
         for iteration in range(self._simulations):
             # Selection
             while not node.state.is_terminal and node.is_fully_expanded:
-                node = node.best_child(node.state.n_actions)
+                node = node.best_child(self._exploration_weight)
 
             # Expansion
             if not node.state.is_terminal and not node.is_fully_expanded:

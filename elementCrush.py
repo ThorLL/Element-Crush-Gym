@@ -83,9 +83,7 @@ class ElementCrush(nnx.Module):
         )
 
         self.to_string = lambda: f'elementCrush/{height}x{width}x{types}/{residual_layer}_{features}'
-
-    def to_string(self):
-        pass
+        self.init_params = lambda: ((height, width), types, residual_layer, features)
 
     @nnx.jit
     def __call__(self, x):
@@ -130,7 +128,7 @@ class ElementCrush(nnx.Module):
         self.optimizer.update(grads)
         self.update_metrics(aux_data, values, policies)
 
-    def train(self, train_ds, test_ds, epochs, eval_every, plot=True, show=False):
+    def train(self, train_ds, test_ds, epochs, eval_every, plot=True, auto_saver=True):
         print('starting training')
 
         if plot:
@@ -165,9 +163,12 @@ class ElementCrush(nnx.Module):
                         if plot:
                             plotter.update()
 
+                        if auto_saver:
+                            self.save(f'Auto{epoch}{step}', force=True)
+        if auto_saver:
+            self.save(f'Auto{epoch}{step}', force=True)
         if plot:
-            if show:
-                plotter.show()
+            plotter.show()
             plotter.save(self.to_string().replace('/','_'))
 
     def save(self, suffix=None, force: bool = False):
@@ -183,7 +184,7 @@ class ElementCrush(nnx.Module):
                 raise e
 
     @staticmethod
-    def load(file_name=None) -> 'ElementCrush':
+    def load(file_name=None) -> tuple['ElementCrush', BoardConfig]:
         try:
             if file_name is None:
                 models_folder = f'{CKPT_PATH}/elementCrush/'
@@ -200,23 +201,27 @@ class ElementCrush(nnx.Module):
                 file_name = model_group + '/' + chose('Chose model', models)
 
             # extract abstract model from file
+            if not file_name.startswith(f'{CKPT_PATH}/'):
+                file_name = f'{CKPT_PATH}/' + file_name
             _, shape, model = tuple(file_name.split('elementCrush')[-1].split('/'))
 
             h, w, t = tuple(shape.split('x'))
             cfg = BoardConfig(rows=int(h), columns=int(w), types=int(t))
-            layers, feats = tuple(model.split('_'))
+            layers, feats, *_ = tuple(model.split('_'))
+
             model = nnx.eval_shape(lambda: ElementCrush(cfg, int(layers), int(feats)))
             state = nnx.state(model)
 
             state = checkpointer.restore(file_name, state)
 
             nnx.update(model, state)
-            return model
+            return model, cfg
         except Exception as e:
             print('Failed to load model:', e)
             print('Make sure any exists')
             print('Here is a default model')
-            return ElementCrush(BoardConfig())
+            cfg = BoardConfig()
+            return ElementCrush(cfg), cfg
 
     def __eq__(self, other: Optional['ElementCrush']) -> bool:
         if other is None:

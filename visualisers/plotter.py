@@ -35,7 +35,7 @@ def plot_distribution(data):
 
     print(build_table(
         'Samples table',
-        ['Dataset', 'Mean', 'Min(Q0)', 'Q1', 'Median(Q2)', 'Q3', 'Max(Q5)', 'Standard Deviation'],
+        ['Dataset', 'Mean', 'Min(Q0)', 'Q1', 'Median(Q2)', 'Q3', 'Max(Q4)', 'Standard Deviation'],
         [analysis.values() for analysis in analyses]
     ))
 
@@ -52,9 +52,9 @@ def plot_distribution(data):
 
     # Add legend and labels
     plt.legend()
-    plt.xlabel('Value')
+    plt.xlabel('Game Score')
     plt.ylabel('Density')
-    plt.title('Normal Distributions of Data')
+    plt.title('Normal Distributions of Game Score')
     plt.grid()
     plt.show()
 

@@ -44,16 +44,16 @@ def batch_data(data_size, insert=None):
 
 
 def batcher(data):
-    f, batched_data = data
+    (f, data), batch_size = data
     batched_results = []
-    for _ in range(batched_data):
-        batched_results.append(f())
+    for _ in range(batch_size):
+        batched_results.append(f(*data))
         update_pbar()
     return batched_results
 
 
-def async_pbar_auto_batcher(func, data_size):
-    return async_pbar(batcher, batch_data(data_size, func), data_size)
+def async_pbar_auto_batcher(func, data_size, data=None):
+    return async_pbar(batcher, batch_data(data_size, (func, data)), data_size)
 
 
 def batched_async_pbar(func, data_size, data=None):

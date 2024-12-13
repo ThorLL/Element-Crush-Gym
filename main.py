@@ -11,12 +11,11 @@ import gui
 from elementCrush import ElementCrush
 from match3tile.boardConfig import BoardConfig
 from match3tile.boardv2 import BoardV2
-from match3tile.draw_board import BoardAnimator
+from match3tile.visualBoard import VisualBoard
 from mctslib.standard.mcts import MCTS
 from dataset import Dataset
 from samplerTasks import random_task, greedy_test, mcts_task, nn_mcts_task
 from util.multiprocessingAutoBatcher import async_pbar_auto_batcher
-from util.profiler import perform_profiling
 from visualisers.plotter import plot_distribution
 
 
@@ -95,7 +94,7 @@ def parse_args():
     # general args
     parser.add_argument("--train_em_all", action="store_true", default=False)
     parser.add_argument("--gui", action="store_true", default=False)
-    parser.add_argument("--sample_size", action="store", type=int, default=100)
+    parser.add_argument("--sample_size", action="store", type=int, default=50)
     # board args
     parser.add_argument("--height", action="store", type=int, default=9)
     parser.add_argument("--width", action="store", type=int, default=9)
@@ -110,6 +109,7 @@ def parse_args():
     parser.add_argument("--nesterov", action="store_true", default=False)
 
     parser.add_argument("--training_plot", action="store_true", default=False)
+    parser.add_argument("--auto_saver", action="store_true", default=True)
     parser.add_argument("--epochs", action="store", type=int, default=1)
     parser.add_argument("--eval_every", action="store", type=int, default=100)
     # dataset args
@@ -124,7 +124,7 @@ def parse_args():
 
     parser.add_argument("--seed", action="store", type=int, default=100)
     parser.add_argument("--moves", action="store", type=int, default=20)
-    parser.add_argument("--sims", action="store", type=int, default=1000)
+    parser.add_argument("--sims", action="store", type=int, default=100)
     parser.add_argument("--exploration_weight", action="store", type=float, default=3.0)
     parser.add_argument("--deterministic", action="store_true", default=False)
     parser.add_argument("--render", action="store_true", default=False)
@@ -146,8 +146,6 @@ if __name__ == "__main__":
     profiling = gui.Variable('Profiling', args.profile)
     sample_size = gui.Variable('Sample Size', args.sample_size, 'size')
 
-    seed = gui.Variable('Seed', args.seed)
-
     exploration_weight = gui.Variable('Exploration Weight', args.exploration_weight, 'ew')
     simulations = gui.Variable('Simulations', args.sims, 'sims')
     deterministic = gui.Variable('Deterministic', args.deterministic)
@@ -167,7 +165,7 @@ if __name__ == "__main__":
         board.set(BoardV2(moves.val, cfg), force=True)
         dataset.set(Dataset(cfg, moves.val), force=True)
 
-
+    seed = gui.Variable('Seed', args.seed, callback=build_board)
     moves = gui.Variable('Moves', args.moves, callback=build_board)
     shape = gui.Variable('Shape', (args.height, args.height, args.types), callback=build_board)
 
@@ -176,6 +174,7 @@ if __name__ == "__main__":
     epochs = gui.Variable('Epochs', args.epochs)
     eval_every = gui.Variable('Eval every', args.eval_every, 'eval')
     show_training_plot = gui.Variable('Show training plot', args.training_plot, 'plot')
+    auto_save = gui.Variable('Auto save model during training', args.auto_saver, 'auto_save')
 
     learning_rate = gui.Variable('Learning Rate', args.learning_rate, 'lr')
     momentum = gui.Variable('Momentum', args.momentum)
@@ -226,43 +225,59 @@ if __name__ == "__main__":
             print('No model selected, create or load one')
             return
         try:
+            model_shape, models_types, *_ = model.val.init_params()
+            shape.set((*model_shape, models_types), force=True)
             train, test = dataset.val.sample(dataset_size.val, dataset_caching.val).get_split(data_split.val)
-            model.train(train, test, epochs.val, eval_every.val, show_training_plot)
+            model.train(train, test, epochs.val, eval_every.val, show_training_plot.val, auto_save.val)
             nn_mcts_score.clear()
         except Exception as e:
             raise e
 
     def load_model():
-        with redirect_stdout(sys.__stdout__):
-            model.set(ElementCrush.load(), force=True)
+        with (redirect_stdout(sys.__stdout__)):
+            m, cfg = ElementCrush.load()
+            seed.set(cfg.seed, force=True)
+            shape.set((*cfg.shape, cfg.types), force=True)
+            model.set(m, force=True)
         nn_mcts_score.clear()
 
     def sample():
         size = sample_size.val
+        cfg = get_config()
+
+        if model.val is not None:
+            if len(nn_mcts_score) < size:
+                missing = size - len(nn_mcts_score)
+                missing = [
+                    nn_mcts_task(moves.val, exploration_weight.val, simulations.val, model.val, cfg)
+                    for _ in tqdm(range(missing))
+                ]
+                nn_mcts_score.extend(missing)
+
         if len(random_scores) < size:
             missing = size - len(random_scores)
-            random_scores.extend(async_pbar_auto_batcher(random_task, missing))
+            random_scores.extend(async_pbar_auto_batcher(random_task, missing, (moves.val, cfg)))
 
         if len(greedy_score) < size:
             missing = size - len(greedy_score)
-            greedy_score.extend(async_pbar_auto_batcher(greedy_test, missing))
+            greedy_score.extend(async_pbar_auto_batcher(greedy_test, missing, (moves.val, cfg)))
 
         if len(mcts_score) < size:
             missing = size - len(mcts_score)
-            mcts_score.extend(async_pbar_auto_batcher(mcts_task, missing))
-
-        if len(nn_mcts_score) < size and model != None:
-            missing = size - len(nn_mcts_score)
-            nn_mcts_score.extend([nn_mcts_task(model.val) for _ in tqdm(range(missing))])
+            mcts_score.extend(async_pbar_auto_batcher(mcts_task, missing, (
+                moves.val,
+                exploration_weight.val,
+                simulations.val,
+                cfg)))
 
         data = {
-            'Random actions': random_scores[:size],
-            'Greedy actions': greedy_score[:size],
-            'MCTS actions': mcts_score[:size],
+            'Random heuristic': random_scores[:size],
+            'Greedy heuristic': greedy_score[:size],
+            'MCTS': mcts_score[:size],
         }
 
         if any(nn_mcts_score):
-            data['NN MCTS actions'] = nn_mcts_score[:size]
+            data['nnMCTS'] = nn_mcts_score[:size]
 
         plot_distribution(data)
 
@@ -271,6 +286,22 @@ if __name__ == "__main__":
             print('No model selected, create or load one')
             return
         model.val.save()
+
+    cfg = get_config()
+
+    actions = []
+
+    state = BoardV2(moves.val, cfg)
+    mcts = MCTS(state, exploration_weight.val, simulations.val, True, deterministic=False)
+    while not state.is_terminal:
+        action, _, _, = mcts()
+        state = state.apply_action(action)
+        actions.append(action)
+
+    state = VisualBoard(moves.val, 1, 60, cfg)
+    input()
+    for action in actions:
+        state = state.apply_action(action)
 
     if args.gui:
         main_gui = gui.Menu(
@@ -285,13 +316,14 @@ if __name__ == "__main__":
                 gui.Menu(
                     'Element Crush AI',
                     short_hand='ai',
-                    info=gui.Info('The model uses the sgd optimizer', model),
+                    info=gui.Info('The model uses the sgd optimizer', model, 'auto_saver will save after each eval step'),
                     variables=gui.Variables(
                         features,
                         residual_layer,
                         epochs,
                         eval_every,
                         show_training_plot,
+                        auto_save,
                         learning_rate,
                         momentum,
                         nesterov
@@ -333,33 +365,19 @@ if __name__ == "__main__":
 
         main_gui.start()
 
-    # testing
-    #shape.set((7, 7, 6), force=True)
-    #dataset_size.set(10000, force=True)
-    model.set(ElementCrush(
-        get_config(),
-        residual_layer.val,
-        features.val,
-        sgd(learning_rate.val, momentum.val, nesterov=nesterov.val)
-    ), force=True)
-    mirrored.set(False, True)
-    type_switched.set(False, True)
-    eval_every.set(1, True)
-    train_model()
-
-    if args.profile:
-        print("-" * 50)
-        print(f" Performing {args.profile} MCTS Profiling")
-        print(f" - Seed: {args.seed}")
-        print(f" - Moves: {args.moves}")
-        print(f" - Goal: {args.goal}")
-        print(f" - Simulations: {args.sims}")
-        print(f" - Verbose: {args.verbose}")
-        print(f" - Deterministic: {args.deterministic}")
-        print("-" * 50)
-
-        perform_profiling(args.profile, args.sort, mcts)
-        exit()
+    # if args.profile:
+    #     print("-" * 50)
+    #     print(f" Performing {args.profile} MCTS Profiling")
+    #     print(f" - Seed: {args.seed}")
+    #     print(f" - Moves: {args.moves}")
+    #     print(f" - Goal: {args.goal}")
+    #     print(f" - Simulations: {args.sims}")
+    #     print(f" - Verbose: {args.verbose}")
+    #     print(f" - Deterministic: {args.deterministic}")
+    #     print("-" * 50)
+    #
+    #     perform_profiling(args.profile, args.sort, mcts)
+    #     exit()
 
     #if args.mcts_single:
     #    mcts_single(args.seed, args.moves, args.goal, args.sims, args.render, args.verbose)

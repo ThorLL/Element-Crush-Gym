@@ -1,6 +1,7 @@
 from typing import List
 
 import numpy as np
+from fontTools.misc.cython import returns
 
 from match3tile.boardConfig import BoardConfig
 from match3tile.boardFunctions import legal_actions, swap, get_matches, get_match_spawn_mask, shuffle
@@ -58,7 +59,7 @@ class BoardV2(State):
         def point_board_vec(x):
             if x <= type_mask:         # normal token
                 return 2
-            if x == mega_token:        # mega token
+            if x >= mega_token:        # mega token
                 return 250
             if x < special_type_mask:  # line token
                 return 25
@@ -73,9 +74,12 @@ class BoardV2(State):
         token1, token2 = self.array[source], self.array[target]
         token1_type, token2_type = special_tokens[source], special_tokens[target]
 
+        token1_type = mega_token if token1 > mega_token else token1_type
+        token2_type = mega_token if token2 > mega_token else token2_type
+
+
         def are(type1, type2):
             return (token1_type == type1 and token2_type == type2) or (token2_type == type1 and token1_type == type2)
-
 
         # removes all tokens
         if are(mega_token, mega_token):
@@ -149,9 +153,9 @@ class BoardV2(State):
                     case t if t == v_line:
                         token_board[:, j] = 0
                     case t if t == bomb:
-                        start_row, end_row = i - 1, i + 1
-                        start_col, end_col = j - 1, j + 1
-                        token_board[start_col:end_col, start_row:end_row] = 0
+                        start_row, end_row = i - 1, i + 2
+                        start_col, end_col = j - 1, j + 2
+                        token_board[start_row:end_row, start_col:end_col] = 0
 
             # extract points
             points_board = points_board[(token_board == 0)]
@@ -160,7 +164,6 @@ class BoardV2(State):
             # merge merge sub boards
             next_state[(token_board == 0)] = 0
             next_state[(token_spawn != 0)] += token_spawn[(token_spawn != 0)]
-            next_state = np.clip(next_state, 0, 32)
 
             # simulate gravity
             for col in range(width):
@@ -210,8 +213,9 @@ class BoardV2(State):
     def greedy_action(self) -> int:
         best_action = None
         hightest_reward = -1
+        state = BoardV2(self.n_actions, self.cfg, self.array)
         for action in self.legal_actions:
-            next_state = self.apply_action(action)
+            next_state = state.apply_action(action)
             if next_state.reward > hightest_reward:
                 hightest_reward = next_state.reward
                 best_action = action
